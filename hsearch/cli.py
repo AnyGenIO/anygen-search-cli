@@ -72,6 +72,7 @@ async def _run_one(
         hit = cache.get(provider_name, eff_query, cache_params)
         if hit is not None:
             results = [SearchResult(**r) for r in hit]
+            extras_out["cached"] = True
             return provider_name, results, None, extras_out
     try:
         provider = get_provider(provider_name)
@@ -99,6 +100,7 @@ async def _run_one(
             [r.to_dict() | {"raw": {}} for r in results],
             ttl=cache_ttl_override,
         )
+    extras_out["cached"] = False
     return provider_name, results, None, extras_out
 
 
@@ -310,11 +312,17 @@ def search(
 
     # ---- Build meta for structured output --------------------------------
     tavily_answer = (extras_by_provider.get("tavily") or {}).get("answer")
+    cache_status = {
+        p: extras_by_provider.get(p, {}).get("cached")
+        for p in providers
+        if "cached" in extras_by_provider.get(p, {})
+    }
     meta: dict = {
         "query": query,
         "mode": mode or "default",
         "providers_queried": providers,
         "total_results": len(merged),
+        "cached": cache_status,
     }
     if (answer or mode == "answer") and tavily_answer:
         meta["answer"] = tavily_answer
