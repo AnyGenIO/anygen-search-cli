@@ -123,6 +123,56 @@ hsearch search "rust async runtimes" --format json | jq '.[].url'
 
 ---
 
+## Content extraction
+
+`hsearch` doubles as a **URL-to-markdown** tool. Point it at any page and get
+back clean, LLM-ready markdown — no scraping logic, no boilerplate stripping
+on your side.
+
+```bash
+# Single URL (default: Jina Reader, free, fast)
+hsearch extract https://anthropic.com/news/claude-opus-4-7
+
+# Many URLs in parallel
+hsearch extract https://a.com/x https://b.com/y https://c.com/z --concurrency 8
+
+# JS-heavy / paywalled? Switch to Firecrawl
+hsearch extract https://app.example.com/dashboard --provider firecrawl
+
+# JSON output for downstream pipelines
+hsearch extract https://arxiv.org/abs/2410.10630 --format json | jq '.content'
+```
+
+### Flags
+
+| Flag             | Type | Default    | Description                                          |
+| ---------------- | ---- | ---------- | ---------------------------------------------------- |
+| `--provider`,`-p`| str  | `jina`     | `jina` (free, fast) or `firecrawl` (JS render)       |
+| `--format`, `-f` | str  | `markdown` | `markdown` or `json`                                 |
+| `--concurrency`,`-c`| int | 4         | Parallel requests when extracting multiple URLs      |
+
+### Two ways to get full page content
+
+| Want…                                           | Use                                  |
+| ----------------------------------------------- | ------------------------------------ |
+| Markdown for **a known URL**                    | `hsearch extract <URL>`              |
+| Markdown for **the top-N results of a search**  | `hsearch search "..." --extract-top 3` |
+
+`--extract-top N` runs a search, then fetches and inlines the full markdown
+for the first N deduped results into the `content` field — perfect for
+pipelines that want both discovery and content in a single call.
+
+```bash
+# Search + auto-extract the top 3 hits, render as markdown
+hsearch search "kubernetes 1.32 changes" --extract-top 3 --format markdown
+```
+
+> **Provider notes.** Jina Reader is free and handles ~95% of pages well. Use
+> Firecrawl when a page is JS-heavy, requires interaction, or returns thin
+> content from Jina.
+
+---
+
 ## Documentation
 
 - 📖 **[docs/USAGE.md](docs/USAGE.md)** — every flag, every mode, with examples
