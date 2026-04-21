@@ -1,0 +1,54 @@
+"""Diskcache-backed result cache with TTL."""
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+from diskcache import Cache
+
+from hsearch.config import cache_dir, cache_ttl
+
+
+def _make_key(provider: str, query: str, params: dict[str, Any]) -> str:
+    payload = json.dumps(
+        {"p": provider, "q": query, "x": params}, sort_keys=True, ensure_ascii=False
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+class ResultCache:
+    """Thin wrapper around diskcache with JSON-serialized values."""
+
+    def __init__(self) -> None:
+        self._cache = Cache(str(cache_dir()))
+
+    def get(self, provider: str, query: str, params: dict[str, Any]) -> Any | None:
+        key = _make_key(provider, query, params)
+        return self._cache.get(key)
+
+    def set(
+        self,
+        provider: str,
+        query: str,
+        params: dict[str, Any],
+        value: Any,
+        ttl: int | None = None,
+    ) -> None:
+        key = _make_key(provider, query, params)
+        self._cache.set(key, value, expire=ttl or cache_ttl())
+
+    def clear(self) -> int:
+        n = len(self._cache)
+        self._cache.clear()
+        return n
+
+    def stats(self) -> dict[str, Any]:
+        return {
+            "path": str(cache_dir()),
+            "entries": len(self._cache),
+            "size_bytes": self._cache.volume(),
+        }
+
+    def close(self) -> None:
+        self._cache.close()
