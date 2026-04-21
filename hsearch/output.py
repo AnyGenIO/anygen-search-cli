@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Iterable
+from typing import Any, Iterable
 
 from rich.console import Console
 from rich.table import Table
@@ -39,10 +39,18 @@ def render_table(results: Iterable[SearchResult], console: Console | None = None
     console.print(table)
 
 
-def render_json(results: Iterable[SearchResult]) -> str:
-    return json.dumps(
-        [r.to_dict() for r in results], ensure_ascii=False, indent=2
-    )
+def render_json(
+    results: Iterable[SearchResult],
+    meta: dict[str, Any] | None = None,
+    errors: dict[str, str] | None = None,
+) -> str:
+    payload: dict[str, Any] = {}
+    if meta is not None:
+        payload["meta"] = meta
+    payload["results"] = [r.to_dict() for r in results]
+    if errors:
+        payload["errors"] = errors
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def render_jsonl(results: Iterable[SearchResult]) -> str:
@@ -86,12 +94,18 @@ def render_urls(results: Iterable[SearchResult]) -> str:
     return "\n".join(r.url for r in results if r.url)
 
 
-def emit(results: list[SearchResult], fmt: str, console: Console | None = None) -> None:
+def emit(
+    results: list[SearchResult],
+    fmt: str,
+    console: Console | None = None,
+    meta: dict[str, Any] | None = None,
+    errors: dict[str, str] | None = None,
+) -> None:
     fmt = fmt.lower()
     if fmt == "table":
         render_table(results, console=console)
     elif fmt == "json":
-        sys.stdout.write(render_json(results) + "\n")
+        sys.stdout.write(render_json(results, meta=meta, errors=errors) + "\n")
     elif fmt == "jsonl":
         sys.stdout.write(render_jsonl(results) + "\n")
     elif fmt in ("md", "markdown"):

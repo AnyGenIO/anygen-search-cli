@@ -173,8 +173,8 @@ def search(
         False, "--all", help="Query every configured provider in parallel + merge."
     ),
     top: int = typer.Option(10, "--top", "-n", help="Max results per provider."),
-    fmt: str = typer.Option(
-        "table", "--format", "-f", help="Output: table | json | jsonl | markdown | urls"
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="Output: table | json | jsonl | markdown | urls (auto: json when piped, table in terminal)"
     ),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable result cache."),
     cache_ttl_opt: Optional[int] = typer.Option(
@@ -297,6 +297,9 @@ def search(
     limit = max(top, 1) if not all_providers else top * len(providers)
     merged = merged[:limit]
 
+    if fmt is None:
+        fmt = "table" if sys.stdout.isatty() else "json"
+
     if extract_top and extract_top > 0 and merged:
         urls = [r.url for r in merged[:extract_top] if r.url]
         outcomes = asyncio.run(extract_many(urls, provider="jina", concurrency=4))
@@ -305,8 +308,18 @@ def search(
             if r.url in url_to_content:
                 r.content = url_to_content[r.url]
 
-    # ---- Top-of-output answer panel (Tavily) -----------------------------
+    # ---- Build meta for structured output --------------------------------
     tavily_answer = (extras_by_provider.get("tavily") or {}).get("answer")
+    meta: dict = {
+        "query": query,
+        "mode": mode or "default",
+        "providers_queried": providers,
+        "total_results": len(merged),
+    }
+    if (answer or mode == "answer") and tavily_answer:
+        meta["answer"] = tavily_answer
+
+    # ---- Top-of-output answer panel (human formats only) -----------------
     if (answer or mode == "answer") and tavily_answer and fmt in ("table", "markdown", "md"):
         if fmt == "table":
             console.print(
@@ -320,8 +333,9 @@ def search(
         else:
             sys.stdout.write(f"## Answer\n\n{tavily_answer}\n\n")
 
-    emit(merged, fmt, console=console)
-    _print_errors(errors)
+    emit(merged, fmt, console=console, meta=meta, errors=errors)
+    if fmt != "json":
+        _print_errors(errors)
     if not merged and errors:
         raise typer.Exit(1)
 
@@ -332,18 +346,29 @@ def extract(
     provider: str = typer.Option(
         "jina", "--provider", "-p", help="jina | firecrawl"
     ),
-    fmt: str = typer.Option("markdown", "--format", "-f", help="markdown | json"),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="markdown | json (auto: json when piped, markdown in terminal)"
+    ),
     concurrency: int = typer.Option(4, "--concurrency", "-c", help="Parallel requests."),
 ) -> None:
     """Fetch one or more URLs and return clean markdown/text."""
+    if fmt is None:
+        fmt = "markdown" if sys.stdout.isatty() else "json"
     outcomes = asyncio.run(extract_many(urls, provider=provider, concurrency=concurrency))
     if fmt == "json":
         import json
 
-        payload = [
-            {"url": u, "content": c, "error": e} for (u, c, e) in outcomes
-        ]
-        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        results_ok = [{"url": u, "content": c} for u, c, e in outcomes if not e]
+        errs = {u: e for u, _c, e in outcomes if e}
+        meta = {
+            "provider": provider,
+            "urls_requested": len(urls),
+            "urls_succeeded": len(results_ok),
+        }
+        out: dict = {"meta": meta, "results": results_ok}
+        if errs:
+            out["errors"] = errs
+        sys.stdout.write(json.dumps(out, ensure_ascii=False, indent=2) + "\n")
         return
     # markdown
     for url, content, err in outcomes:

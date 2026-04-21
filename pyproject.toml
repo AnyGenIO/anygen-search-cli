@@ -3,7 +3,7 @@ name = "anygen-search-cli"
 version = "0.2.0"
 description = "Unified CLI over 6 commercial search APIs (Brave, Serper, Exa, Tavily, Firecrawl, Jina) — answer mode, multi-provider dedup, content extraction."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 authors = [{ name = "AnyGenIO" }]
 license = { text = "MIT" }
 keywords = ["search", "cli", "agent", "rag", "brave", "serper", "exa", "tavily", "firecrawl", "jina"]

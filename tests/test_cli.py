@@ -106,7 +106,9 @@ def test_search_multi_provider():
         )
     assert r.exit_code == 0, r.output
     payload = json.loads(r.stdout)
-    urls = {item["url"] for item in payload}
+    assert "meta" in payload
+    assert "results" in payload
+    urls = {item["url"] for item in payload["results"]}
     assert "https://b.test/1" in urls
     assert "https://s.test/1" in urls
 
