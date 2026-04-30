@@ -38,9 +38,10 @@ metadata:
 
 # hsearch — Multi-Provider Search CLI
 
-Self-hosted Python CLI. Reads provider credentials from environment variables
-(uses python-dotenv to load `~/.hermes/.env` or project-local `./.env`; no
-manual sourcing needed). Invoke via the terminal/shell tool.
+Self-hosted Python CLI. Reads provider credentials from process env plus
+project `./.env`, active Hermes profile `$HERMES_HOME/.env`, and global
+`~/.hermes/.env` (profile-aware for Telegram/gateway sessions; no manual
+sourcing needed). Invoke via the terminal/shell tool.
 
 ## When to reach for this
 
@@ -63,6 +64,9 @@ hsearch search "QUERY" --mode academic --summary --top 5
 # Multi-provider parallel + dedup (when you don't know which is best)
 hsearch search "QUERY" --all --top 5
 
+# Agent-friendly compact JSON for downstream LLM/tools
+hsearch search "QUERY" --agent --all
+
 # Just give me URLs to feed into another tool
 hsearch search "QUERY" --format urls --top 10
 
@@ -83,7 +87,9 @@ hsearch extract https://example.com/article
 | `--site DOMAIN`      | Restrict to domain. Repeatable.                                    |
 | `--exclude DOMAIN`   | Exclude domain. Repeatable.                                        |
 | `--all`              | Query every configured provider in parallel.                       |
+| `--agent`            | Compact agent preset: JSON output + top 5 unless overridden.       |
 | `--extract-top N`    | Inline full content of top-N results.                              |
+| `--extract-provider firecrawl` | Use Firecrawl instead of Jina for `--extract-top`.        |
 | `--format json`      | Machine-readable; pipe into `jq` or downstream tool.               |
 | `--retries N`        | Retry on 429/5xx (default 2).                                      |
 

@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-40%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -47,12 +47,13 @@ You now have a `hsearch` command on your PATH (and `python -m hsearch` works too
 
 ### Configure provider keys
 
-Copy [`.env.example`](.env.example) to `~/.hermes/.env` (recommended) or
-project-local `./.env`, fill in **at least one** key:
+Copy [`.env.example`](.env.example) to your active Hermes profile env
+(`$HERMES_HOME/.env`), global `~/.hermes/.env`, or project-local `./.env`,
+then fill in **at least one** key:
 
 ```bash
-cp .env.example ~/.hermes/.env
-$EDITOR ~/.hermes/.env
+cp .env.example "${HERMES_HOME:-$HOME/.hermes}/.env"
+$EDITOR "${HERMES_HOME:-$HOME/.hermes}/.env"
 ```
 
 Then verify:
@@ -86,6 +87,9 @@ hsearch search "what's new in Claude Opus 4.7" --mode answer --days 7
 # Multi-provider, parallel, deduped, JSON for piping into jq/agents
 hsearch search "quantum chips Q1 2026" --all --top 8 --format json
 
+# Agent-friendly compact JSON preset (equivalent to --format json --top 5 unless overridden)
+hsearch search "quantum chips Q1 2026" --agent --all
+
 # Latest news from past 7 days
 hsearch search "Anthropic announcements" --mode news --days 7
 
@@ -103,6 +107,9 @@ hsearch extract https://anthropic.com/news/claude-opus-4-7
 
 # Full content for top-3 results, then pipe to your favorite LLM
 hsearch search "kubernetes 1.32 changes" --extract-top 3 --format markdown
+
+# JS-heavy top results? Use Firecrawl for the search→extract step
+hsearch search "app router docs" --extract-top 3 --extract-provider firecrawl --format json
 ```
 
 ---
@@ -117,8 +124,10 @@ hsearch search "kubernetes 1.32 changes" --extract-top 3 --format markdown
 | `jsonl`    | Stream-friendly; one JSON object per line.   |
 | `urls`     | Just URLs, one per line — for `xargs curl`.  |
 
+`--agent` is a convenience preset for AI agents: it selects compact structured JSON and `--top 5` unless you explicitly pass `--format` or `--top`.
+
 ```bash
-hsearch search "rust async runtimes" --format json | jq '.[].url'
+hsearch search "rust async runtimes" --format json | jq '.results[].url'
 ```
 
 ---
@@ -140,7 +149,7 @@ hsearch extract https://a.com/x https://b.com/y https://c.com/z --concurrency 8
 hsearch extract https://app.example.com/dashboard --provider firecrawl
 
 # JSON output for downstream pipelines
-hsearch extract https://arxiv.org/abs/2410.10630 --format json | jq '.content'
+hsearch extract https://arxiv.org/abs/2410.10630 --format json | jq '.results[].content'
 ```
 
 ### Flags
@@ -150,6 +159,8 @@ hsearch extract https://arxiv.org/abs/2410.10630 --format json | jq '.content'
 | `--provider`,`-p`| str  | `jina`     | `jina` (free, fast) or `firecrawl` (JS render)       |
 | `--format`, `-f` | str  | `markdown` | `markdown` or `json`                                 |
 | `--concurrency`,`-c`| int | 4         | Parallel requests when extracting multiple URLs      |
+
+`search --extract-top N` uses the same extractors. It defaults to Jina, but you can choose Firecrawl for JS-heavy pages with `--extract-provider firecrawl`.
 
 ### Two ways to get full page content
 

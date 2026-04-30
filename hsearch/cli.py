@@ -22,7 +22,7 @@ from hsearch.config import (
     timeout_seconds,
 )
 from hsearch.dedup import dedup_merge
-from hsearch.extract import extract_many
+from hsearch.extract import EXTRACT_PROVIDERS, extract_many
 from hsearch.filters import Filters, apply as apply_filters
 from hsearch.models import SearchResult
 from hsearch.output import emit
@@ -143,6 +143,20 @@ def _print_errors(errors: dict[str, str]) -> None:
         err_console.print(f"[yellow]![/] [bold]{name}[/]: {msg}")
 
 
+def _cli_option_present(long_name: str, short_name: str | None = None) -> bool:
+    """Return True when an option was explicitly supplied in argv.
+
+    Typer exposes only parsed values to command functions, so presets need a
+    small argv check to avoid overriding user-provided values.
+    """
+    for arg in sys.argv[1:]:
+        if arg == long_name or arg.startswith(f"{long_name}="):
+            return True
+        if short_name and (arg == short_name or arg.startswith(short_name)):
+            return True
+    return False
+
+
 # --- commands ----------------------------------------------------------------
 
 
@@ -190,7 +204,17 @@ def search(
     site: list[str] = typer.Option(None, "--site", help="Restrict to site(s); repeatable."),
     exclude: list[str] = typer.Option(None, "--exclude", help="Exclude site(s); repeatable."),
     extract_top: int = typer.Option(
-        0, "--extract-top", help="Extract content of top-N merged results via Jina."
+        0, "--extract-top", help="Extract content of top-N merged results."
+    ),
+    extract_provider: str = typer.Option(
+        "jina",
+        "--extract-provider",
+        help="Provider for --extract-top content fetch: jina | firecrawl.",
+    ),
+    agent: bool = typer.Option(
+        False,
+        "--agent",
+        help="Agent-friendly preset: --format json --top 5 unless explicitly overridden.",
     ),
     # ---- v0.2 new options ---------------------------------------------------
     answer: bool = typer.Option(
@@ -235,6 +259,19 @@ def search(
         err_console.print(f"[red]Invalid filter:[/] {e}")
         raise typer.Exit(2)
 
+    if agent:
+        if fmt is None:
+            fmt = "json"
+        if not _cli_option_present("--top", "-n"):
+            top = 5
+
+    if extract_top and extract_top > 0 and extract_provider not in EXTRACT_PROVIDERS:
+        err_console.print(
+            f"[red]Invalid --extract-provider:[/] {extract_provider} "
+            f"(choose {'|'.join(EXTRACT_PROVIDERS)})"
+        )
+        raise typer.Exit(2)
+
     if all_providers:
         providers = configured_providers()
     elif provider:
@@ -243,7 +280,9 @@ def search(
         providers = providers_for_mode(mode)
 
     if not providers:
-        err_console.print("[red]No providers configured.[/] Set API keys in ~/.hermes/.env")
+        err_console.print(
+            "[red]No providers configured.[/] Set API keys in $HERMES_HOME/.env, ~/.hermes/.env, or project .env"
+        )
         raise typer.Exit(2)
 
     extra: dict = {}
@@ -304,7 +343,7 @@ def search(
 
     if extract_top and extract_top > 0 and merged:
         urls = [r.url for r in merged[:extract_top] if r.url]
-        outcomes = asyncio.run(extract_many(urls, provider="jina", concurrency=4))
+        outcomes = asyncio.run(extract_many(urls, provider=extract_provider, concurrency=4))
         url_to_content = {u: c for (u, c, _e) in outcomes if c}
         for r in merged:
             if r.url in url_to_content:
@@ -326,6 +365,11 @@ def search(
     }
     if (answer or mode == "answer") and tavily_answer:
         meta["answer"] = tavily_answer
+    if extract_top and extract_top > 0:
+        meta["extract_top"] = extract_top
+        meta["extract_provider"] = extract_provider
+    if agent:
+        meta["agent_preset"] = True
 
     # ---- Top-of-output answer panel (human formats only) -----------------
     if (answer or mode == "answer") and tavily_answer and fmt in ("table", "markdown", "md"):

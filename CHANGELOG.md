@@ -4,6 +4,15 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.2.1] — 2026-04-30
+
+### Added
+- **`search --agent`** — compact agent preset: defaults to structured JSON output and `--top 5` unless the caller explicitly overrides `--format` or `--top`.
+- **`search --extract-provider jina|firecrawl`** — lets `--extract-top` use Firecrawl for JS-heavy pages instead of always using Jina.
+
+### Fixed
+- Provider key loading is now Hermes-profile-aware: `hsearch` reads `$HERMES_HOME/.env` and global `~/.hermes/.env`, so Telegram/gateway sessions see the active profile's search keys even when `HOME` points at the profile sandbox.
+
 ## [0.2.0] — 2026-04-21
 
 ### Added — provider feature parity & answer mode

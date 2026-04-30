@@ -395,7 +395,7 @@ def test_cli_answer_mode():
 def test_cli_version_022():
     r = runner.invoke(app, ["--version"])
     assert r.exit_code == 0
-    assert "0.2.0" in r.output
+    assert "0.2.1" in r.output
 
 
 def test_cli_summary_flag_passes_through():

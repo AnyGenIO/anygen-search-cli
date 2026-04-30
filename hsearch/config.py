@@ -1,4 +1,8 @@
-"""Configuration loading: env vars from ~/.hermes/.env (and project .env)."""
+"""Configuration loading for provider API keys.
+
+Load env vars from project-local ``.env``, the active Hermes profile ``.env``
+(via ``HERMES_HOME``), and the user-level Hermes ``~/.hermes/.env``.
+"""
 from __future__ import annotations
 
 import os
@@ -6,15 +10,49 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load order: project-local .env (if any), then user-level ~/.hermes/.env.
-# Existing env vars take precedence (override=False) so explicit shell exports win.
-_PROJECT_ENV = Path.cwd() / ".env"
-_HERMES_ENV = Path.home() / ".hermes" / ".env"
 
-if _PROJECT_ENV.exists():
-    load_dotenv(_PROJECT_ENV, override=False)
-if _HERMES_ENV.exists():
-    load_dotenv(_HERMES_ENV, override=False)
+def _candidate_env_files() -> list[Path]:
+    """Return env files in priority order.
+
+    ``load_dotenv(..., override=False)`` means earlier files win, while explicit
+    shell/process environment variables still win over every file. Hermes
+    gateway sessions often set ``HOME`` to the profile sandbox
+    (``.../profiles/<name>/home``), so relying only on ``Path.home()`` misses the
+    real profile secrets. ``HERMES_HOME`` points at the active profile root.
+    """
+    files: list[Path] = []
+
+    explicit = os.environ.get("HSEARCH_ENV_FILE")
+    if explicit:
+        files.append(Path(explicit).expanduser())
+
+    files.append(Path.cwd() / ".env")
+
+    hermes_home_raw = os.environ.get("HERMES_HOME")
+    if hermes_home_raw:
+        hermes_home = Path(hermes_home_raw).expanduser()
+        files.append(hermes_home / ".env")
+        # If HERMES_HOME is ~/.hermes/profiles/<profile>, also load the global
+        # ~/.hermes/.env as a lower-priority fallback.
+        if hermes_home.parent.name == "profiles":
+            files.append(hermes_home.parent.parent / ".env")
+
+    files.append(Path.home() / ".hermes" / ".env")
+
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in files:
+        resolved = path.expanduser()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    return unique
+
+
+# Existing env vars take precedence (override=False) so explicit shell exports win.
+for _env_file in _candidate_env_files():
+    if _env_file.exists():
+        load_dotenv(_env_file, override=False)
 
 
 PROVIDER_ENV: dict[str, str] = {

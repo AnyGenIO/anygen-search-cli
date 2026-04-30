@@ -140,9 +140,91 @@ def test_search_jsonl_format():
         assert "url" in obj and "title" in obj
 
 
+
+
 def test_router_new_modes():
     for m in ("shopping", "video", "images", "places"):
         chosen = providers_for_mode(m)
         assert chosen, f"{m} returned no providers"
         assert chosen[0] == "serper", f"{m} should prefer serper, got {chosen}"
+
+
+def test_search_agent_preset_defaults_to_json_top_5():
+    """--agent should be a compact preset for machine/LLM consumption."""
+    with respx.mock(assert_all_called=True) as mock:
+        mock.get("https://api.search.brave.com/res/v1/web/search").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "web": {
+                        "results": [
+                            {
+                                "url": f"https://b.test/{i}",
+                                "title": f"B{i}",
+                                "description": f"d{i}",
+                            }
+                            for i in range(1, 8)
+                        ]
+                    }
+                },
+            )
+        )
+        r = runner.invoke(app, ["search", "x", "-p", "brave", "--agent", "--no-cache"])
+    assert r.exit_code == 0, r.output
+    payload = json.loads(r.stdout)
+    assert payload["meta"]["agent_preset"] is True
+    assert payload["meta"]["total_results"] == 5
+    assert len(payload["results"]) == 5
+
+
+def test_search_agent_preset_respects_explicit_format_and_top():
+    """Explicit --format/--top should override --agent defaults."""
+    with respx.mock(assert_all_called=True) as mock:
+        mock.get("https://api.search.brave.com/res/v1/web/search").mock(
+            return_value=httpx.Response(200, json=_BRAVE_BODY)
+        )
+        r = runner.invoke(
+            app,
+            [
+                "search", "x", "-p", "brave",
+                "--agent", "--top", "1", "--format", "urls", "--no-cache",
+            ],
+        )
+    assert r.exit_code == 0, r.output
+    assert r.stdout.strip() == "https://b.test/1"
+
+
+def test_search_extract_provider_firecrawl():
+    """--extract-provider should choose the backend used by --extract-top."""
+    with respx.mock(assert_all_called=True) as mock:
+        mock.get("https://api.search.brave.com/res/v1/web/search").mock(
+            return_value=httpx.Response(200, json=_BRAVE_BODY)
+        )
+        mock.post("https://api.firecrawl.dev/v2/scrape").mock(
+            return_value=httpx.Response(
+                200,
+                json={"data": {"markdown": "# Firecrawl extracted content"}},
+            )
+        )
+        r = runner.invoke(
+            app,
+            [
+                "search", "x", "-p", "brave",
+                "--extract-top", "1", "--extract-provider", "firecrawl",
+                "--no-cache", "-f", "json",
+            ],
+        )
+    assert r.exit_code == 0, r.output
+    payload = json.loads(r.stdout)
+    assert payload["meta"]["extract_provider"] == "firecrawl"
+    assert payload["results"][0]["content"] == "# Firecrawl extracted content"
+
+
+def test_search_extract_provider_invalid_requires_extract_top():
+    r = runner.invoke(
+        app,
+        ["search", "x", "-p", "brave", "--extract-top", "1", "--extract-provider", "bad"],
+    )
+    assert r.exit_code == 2
+    assert "Invalid --extract-provider" in r.output
 

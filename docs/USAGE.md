@@ -36,7 +36,8 @@ This page is the long-form companion: **every flag, every mode, with examples.**
 | Flag                       | Type     | Default | Description                                                              |
 | -------------------------- | -------- | ------- | ------------------------------------------------------------------------ |
 | `--top`, `-n`              | int      | 10      | Max results per provider.                                                |
-| `--format`, `-f`           | string   | table   | `table` \| `json` \| `jsonl` \| `markdown` \| `urls`                     |
+| `--format`, `-f`           | string   | auto    | `table` \| `json` \| `jsonl` \| `markdown` \| `urls`; auto JSON when piped. |
+| `--agent`                  | bool     | false   | Agent preset: `--format json --top 5` unless explicitly overridden.      |
 
 ### Filters
 
@@ -66,6 +67,7 @@ This page is the long-form companion: **every flag, every mode, with examples.**
 | Flag                       | Type     | Default | Description                                                                  |
 | -------------------------- | -------- | ------- | ---------------------------------------------------------------------------- |
 | `--extract-top`            | int      | 0       | After search, fetch & inline full markdown for the top-N merged results.      |
+| `--extract-provider`       | string   | `jina`  | Extractor for `--extract-top`: `jina` or `firecrawl` for JS-heavy pages.      |
 
 ### Cache control
 
@@ -126,14 +128,14 @@ hsearch search "stock market" --mode news --days 7 --region US
 
 ```bash
 hsearch search "speculative decoding latency" \
-  --mode academic --summary --top 8 --format json | jq '.[] | {title, url, summary}'
+  --mode academic --summary --top 8 --format json | jq '.results[] | {title, url, summary}'
 ```
 
 ### 5. Force-fresh deep dive on one site
 
 ```bash
 hsearch search "site:openai.com new models" \
-  --provider exa --livecrawl always --extract-top 3 --format markdown
+  --provider exa --livecrawl always --extract-top 3 --extract-provider firecrawl --format markdown
 ```
 
 ### 6. Just give me URLs to feed into a downstream tool
@@ -153,20 +155,34 @@ hsearch extract URL1 URL2 URL3 --concurrency 4 --format json
 
 ## Output schema (`json` / `jsonl`)
 
-Each result is a `SearchResult`:
+`--format json` returns a structured envelope:
 
 ```json
 {
-  "title": "...",
-  "url": "https://...",
-  "snippet": "short description",
-  "content": "(optional) full markdown if --raw / --extract-top",
-  "summary": "(optional) provider-side LLM summary if --summary",
-  "published_date": "2026-04-21",
-  "source": "tavily",
-  "score": 0.87
+  "meta": {
+    "query": "...",
+    "mode": "default",
+    "providers_queried": ["tavily"],
+    "total_results": 1,
+    "cached": {"tavily": false}
+  },
+  "results": [
+    {
+      "url": "https://...",
+      "title": "...",
+      "snippet": "short description",
+      "provider": "tavily",
+      "score": 0.87,
+      "published": "2026-04-21",
+      "sources": ["tavily"],
+      "content": "(optional) full markdown if --raw / --extract-top",
+      "summary": "(optional) provider-side LLM summary if --summary"
+    }
+  ]
 }
 ```
+
+`--format jsonl` emits one bare `SearchResult` object per line for streaming.
 
 Cross-provider URL dedup keeps the first occurrence (provider priority order)
 and merges any unique fields.
@@ -187,7 +203,8 @@ and merges any unique fields.
 | `HSEARCH_CACHE_TTL`    | optional | Cache TTL in sec (default 3600)              |
 | `HSEARCH_CACHE_DIR`    | optional | Override cache dir (default `~/.cache/hsearch`) |
 
-Load order: project `./.env` → `~/.hermes/.env` → shell env (highest wins).
+Load order: explicit shell/process env (highest) → `HSEARCH_ENV_FILE` → project `./.env` → active Hermes profile `$HERMES_HOME/.env` → global `~/.hermes/.env`.
+This is profile-aware for Hermes gateway sessions where `HOME` may point at a sandbox like `~/.hermes/profiles/<name>/home`.
 
 ---
 
