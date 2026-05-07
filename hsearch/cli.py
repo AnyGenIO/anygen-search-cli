@@ -85,6 +85,9 @@ async def _run_one(
             ans = getattr(provider, "_last_answer", None)
             if ans:
                 extras_out["answer"] = ans
+            usage = getattr(provider, "_last_usage", None)
+            if isinstance(usage, dict) and usage:
+                extras_out["usage"] = usage
     except ProviderAuthError as e:
         return provider_name, None, f"auth: {e}", extras_out
     except ProviderHTTPError as e:
@@ -249,6 +252,27 @@ def search(
         None, "--days",
         help="Tavily news mode: results from past N days.",
     ),
+    # ---- 2026-04 new options (provider doc updates) -------------------------
+    exact: bool = typer.Option(
+        False, "--exact",
+        help="Tavily exact_match=True — quoted phrases must appear verbatim (no synonyms).",
+    ),
+    depth: Optional[str] = typer.Option(
+        None, "--depth",
+        help="Tavily search_depth: basic | advanced | fast | ultra-fast.",
+    ),
+    exa_type: Optional[str] = typer.Option(
+        None, "--exa-type",
+        help="Exa type: auto | fast | instant | neural | keyword | deep-reasoning.",
+    ),
+    include_favicon: bool = typer.Option(
+        False, "--include-favicon",
+        help="Tavily: return favicon URL per result.",
+    ),
+    include_usage: bool = typer.Option(
+        False, "--include-usage",
+        help="Tavily: include credit usage info in response meta.",
+    ),
 ) -> None:
     """Run a search across one, many, or all providers."""
     try:
@@ -307,6 +331,11 @@ def search(
     elif mode == "deep":
         extra["type"] = "deep-reasoning"
         extra["summary"] = True
+    elif mode == "fast":
+        # Latency-first: Exa instant + Tavily ultra-fast. Both providers will
+        # ignore params they don't understand thanks to per-provider kwarg gates.
+        extra["type"] = "instant"  # Exa
+        extra["search_depth"] = "ultra-fast"  # Tavily
 
     # ---- v0.2 flags -> provider kwargs -----------------------------------
     if answer:
@@ -326,6 +355,17 @@ def search(
         extra["days"] = days
     if retries is not None:
         extra["_retries"] = retries
+    # ---- 2026-04 new flag wiring ----------------------------------------
+    if exact:
+        extra["exact_match"] = True
+    if depth:
+        extra["search_depth"] = depth  # explicit user choice wins over mode preset
+    if exa_type:
+        extra["type"] = exa_type  # explicit user choice wins over mode preset
+    if include_favicon:
+        extra["include_favicon"] = True
+    if include_usage:
+        extra["include_usage"] = True
 
     results, errors, extras_by_provider = asyncio.run(
         _run_many(
@@ -365,6 +405,14 @@ def search(
     }
     if (answer or mode == "answer") and tavily_answer:
         meta["answer"] = tavily_answer
+    # Surface per-provider usage when --include-usage was set.
+    usage_by_provider = {
+        p: extras_by_provider[p]["usage"]
+        for p in providers
+        if isinstance(extras_by_provider.get(p, {}).get("usage"), dict)
+    }
+    if usage_by_provider:
+        meta["usage"] = usage_by_provider
     if extract_top and extract_top > 0:
         meta["extract_top"] = extract_top
         meta["extract_provider"] = extract_provider

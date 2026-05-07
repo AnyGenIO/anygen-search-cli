@@ -42,7 +42,17 @@ class FirecrawlProvider(SearchProvider):
             cats = kwargs["categories"]
             if isinstance(cats, str):
                 cats = [c.strip() for c in cats.split(",") if c.strip()]
-            payload["categories"] = cats
+            # v2 API now expects [{"type": "github"}] objects; older string form
+            # ["github"] is still accepted for backward compatibility but the
+            # docs steer toward the object shape, so normalize on send.
+            normalized: list[dict[str, Any]] = []
+            for c in cats:
+                if isinstance(c, dict):
+                    normalized.append(c)
+                elif isinstance(c, str) and c:
+                    normalized.append({"type": c})
+            if normalized:
+                payload["categories"] = normalized
         if kwargs.get("country"):
             payload["country"] = kwargs["country"]
         if kwargs.get("location"):

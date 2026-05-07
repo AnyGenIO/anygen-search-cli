@@ -8,6 +8,10 @@ from hsearch.providers.base import SearchProvider
 
 ENDPOINT = "https://api.tavily.com/search"
 
+# Tavily search_depth options as of 2026-04 (added: fast, ultra-fast).
+# basic / advanced were the original two; fast / ultra-fast trade relevance for latency.
+_VALID_DEPTHS = {"basic", "advanced", "fast", "ultra-fast"}
+
 
 class TavilyProvider(SearchProvider):
     name = "tavily"
@@ -16,12 +20,16 @@ class TavilyProvider(SearchProvider):
     # Last raw response (so callers like `--answer` can grab tavily's answer field).
     _last_answer: str | None = None
     _last_images: list[Any] | None = None
+    _last_usage: dict[str, Any] | None = None
 
     async def _search(self, query: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
+        depth = kwargs.get("search_depth", "basic")
+        if depth not in _VALID_DEPTHS:
+            depth = "basic"
         payload: dict[str, Any] = {
             "query": query,
             "max_results": max(1, min(count, 20)),
-            "search_depth": kwargs.get("search_depth", "basic"),
+            "search_depth": depth,
             "topic": kwargs.get("topic", "general"),
         }
         # ---- v0.2 new params ----------------------------------------------
@@ -43,6 +51,13 @@ class TavilyProvider(SearchProvider):
             payload["include_images"] = True
         if kwargs.get("include_image_descriptions"):
             payload["include_image_descriptions"] = True
+        # ---- 2026-04 new params (Tavily community announcements) ----------
+        if kwargs.get("exact_match"):
+            payload["exact_match"] = True
+        if kwargs.get("include_favicon"):
+            payload["include_favicon"] = True
+        if kwargs.get("include_usage"):
+            payload["include_usage"] = True
         # ---- existing optional params -------------------------------------
         if kwargs.get("include_answer"):
             payload["include_answer"] = kwargs["include_answer"]
@@ -62,13 +77,15 @@ class TavilyProvider(SearchProvider):
         resp = await self._request("POST", ENDPOINT, headers=headers, json=payload)
         data = resp.json()
 
-        # Stash answer/images on the instance for ``--answer`` consumers.
+        # Stash answer/images/usage on the instance for ``--answer``/``--include-usage`` consumers.
         self._last_answer = data.get("answer")
         self._last_images = data.get("images")
+        self._last_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
 
         out: list[SearchResult] = []
         for r in (data.get("results") or [])[:count]:
             raw_content = r.get("raw_content")
+            favicon = r.get("favicon") if isinstance(r.get("favicon"), str) else None
             out.append(
                 SearchResult(
                     url=r.get("url", ""),
@@ -78,6 +95,7 @@ class TavilyProvider(SearchProvider):
                     score=float(r.get("score") or 0.0),
                     published=r.get("published_date"),
                     content=raw_content if isinstance(raw_content, str) else None,
+                    favicon=favicon,
                     raw=r,
                 )
             )

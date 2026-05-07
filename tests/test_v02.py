@@ -196,6 +196,7 @@ async def test_firecrawl_multiple_sources():
 
 @pytest.mark.asyncio
 async def test_firecrawl_categories():
+    """v2 docs prefer [{'type':'github'}] objects; we accept legacy strings and normalize."""
     captured: dict = {}
 
     def _h(req: httpx.Request) -> httpx.Response:
@@ -206,7 +207,23 @@ async def test_firecrawl_categories():
         mock.post("https://api.firecrawl.dev/v2/search").mock(side_effect=_h)
         async with FirecrawlProvider() as p:
             await p.search("q", count=1, categories=["github", "research"])
-    assert captured["body"]["categories"] == ["github", "research"]
+    assert captured["body"]["categories"] == [{"type": "github"}, {"type": "research"}]
+
+
+@pytest.mark.asyncio
+async def test_firecrawl_categories_object_passthrough():
+    """If caller already passes the object form, leave it untouched."""
+    captured: dict = {}
+
+    def _h(req: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(req.content.decode())
+        return httpx.Response(200, json={"success": True, "data": {"web": []}})
+
+    with respx.mock(assert_all_called=True) as mock:
+        mock.post("https://api.firecrawl.dev/v2/search").mock(side_effect=_h)
+        async with FirecrawlProvider() as p:
+            await p.search("q", count=1, categories=[{"type": "pdf"}])
+    assert captured["body"]["categories"] == [{"type": "pdf"}]
 
 
 @pytest.mark.asyncio
@@ -395,7 +412,7 @@ def test_cli_answer_mode():
 def test_cli_version_022():
     r = runner.invoke(app, ["--version"])
     assert r.exit_code == 0
-    assert "0.2.1" in r.output
+    assert "0.2.2" in r.output
 
 
 def test_cli_summary_flag_passes_through():

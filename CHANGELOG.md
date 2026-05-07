@@ -4,6 +4,35 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.2.2] — 2026-05-07
+
+Tracks 2026-04 provider doc updates: Tavily new params, Exa Fast/Instant search types, Firecrawl v2 categories format.
+
+### Added
+- **`--exact`** — Tavily `exact_match=True`: quoted phrases must appear verbatim, no synonym expansion. Useful for exact-name lookups.
+- **`--depth basic|advanced|fast|ultra-fast`** — Tavily `search_depth` selector. `fast`/`ultra-fast` are new latency-first depths added by Tavily in 2026-04 (sub-second responses).
+- **`--exa-type auto|fast|instant|neural|keyword|deep-reasoning`** — explicit Exa `type` selector. `instant` (Exa 2.0) returns in ~400ms; `fast` in ~1s.
+- **`--include-favicon`** — Tavily: each result includes its `favicon` URL (now exposed via the new `SearchResult.favicon` field).
+- **`--include-usage`** — Tavily: response usage block (`{"credits": N}`) is surfaced in the JSON `meta.usage[provider]`.
+- **`--mode fast`** — new latency-first router preset: queries Exa with `type=instant` and Tavily with `search_depth=ultra-fast` in parallel for sub-second multi-provider grounding.
+- `SearchResult.favicon: str | None` field.
+- Provider `_last_usage` introspection hook (mirrors existing `_last_answer`).
+
+### Changed
+- **Firecrawl `categories`** — string array form (`["github"]`) is now auto-normalized to the v2 object form (`[{"type": "github"}]`) before sending. Existing callers continue to work; the wire format matches current Firecrawl docs. Backward-compatible.
+- Tavily `search_depth` is validated against `{basic, advanced, fast, ultra-fast}` and falls back to `basic` on unknown values instead of forwarding garbage to the API.
+
+### Tests
+- **+21 unit tests** (68 total): Tavily exact_match / include_favicon / include_usage / depth variants + invalid-depth fallback, Exa type passthrough (parametrized over fast/instant/auto/deep-reasoning), router `fast` mode, full CLI flag wiring (`--exact`, `--depth`, `--exa-type`, `--include-favicon`, `--include-usage`, `--mode fast`), Firecrawl categories object-form passthrough.
+
+### Verified live (2026-05-07)
+- `--mode fast`: 1.4s for exa+tavily double-fetch with deduped merge.
+- `--depth ultra-fast`: 0.97s tavily-only.
+- `--exa-type instant`: 0.7s exa-only.
+- `--include-favicon`: real favicon URLs returned for Wikipedia + anthropic.com.
+- `--include-usage`: surfaces `meta.usage.tavily.credits=1`.
+- Firecrawl categories normalized form `[{"type": "github"}]` confirmed on the wire.
+
 ## [0.2.1] — 2026-04-30
 
 ### Added
