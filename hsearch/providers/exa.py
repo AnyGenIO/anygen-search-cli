@@ -1,4 +1,4 @@
-"""Exa neural search. Docs: https://docs.exa.ai/reference/search"""
+"""Exa neural search. Docs: https://exa.ai/docs/reference/search"""
 from __future__ import annotations
 
 from typing import Any
@@ -14,18 +14,42 @@ class ExaProvider(SearchProvider):
     requires_env = ["EXA_API_KEY"]
 
     async def _search(self, query: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
-        # `type` is now passed through verbatim to support new values
-        # (`fast`, `instant`, `deep-reasoning`, `deep-lite`, `deep`, etc.).
         payload: dict[str, Any] = {
             "query": query,
             "numResults": max(1, min(count, 100)),
             "type": kwargs.get("type", "auto"),
         }
-        if kwargs.get("use_autoprompt"):
-            payload["useAutoprompt"] = True
+        if kwargs.get("additional_queries"):
+            payload["additionalQueries"] = kwargs["additional_queries"]
+        if kwargs.get("system_prompt"):
+            payload["systemPrompt"] = kwargs["system_prompt"]
+        if kwargs.get("user_location"):
+            payload["userLocation"] = kwargs["user_location"]
 
-        # ---- contents block (text, summary, livecrawl, subpages) ---------
-        contents: dict[str, Any] = {"text": {"maxCharacters": 500}}
+        # Current Exa Search API expects all content options nested under
+        # `contents`. Highlights are the best default snippets for agent tools.
+        contents: dict[str, Any] = {}
+
+        if kwargs.get("highlights", True):
+            if kwargs.get("highlights_query") or kwargs.get("highlights_max_characters"):
+                h: dict[str, Any] = {}
+                if kwargs.get("highlights_query"):
+                    h["query"] = kwargs["highlights_query"]
+                if kwargs.get("highlights_max_characters") is not None:
+                    try:
+                        h["maxCharacters"] = int(kwargs["highlights_max_characters"])
+                    except (TypeError, ValueError):
+                        pass
+                contents["highlights"] = h or True
+            else:
+                contents["highlights"] = True
+
+        if kwargs.get("with_content") or kwargs.get("text"):
+            max_chars = kwargs.get("text_max_characters", 1000)
+            try:
+                contents["text"] = {"maxCharacters": int(max_chars)}
+            except (TypeError, ValueError):
+                contents["text"] = True
 
         # `summary=True` -> {} so Exa picks defaults; `summary_query="..."` -> {"query": ...}
         if kwargs.get("summary_query"):
@@ -33,16 +57,30 @@ class ExaProvider(SearchProvider):
         elif kwargs.get("summary"):
             contents["summary"] = {} if kwargs["summary"] is True else kwargs["summary"]
 
-        if kwargs.get("livecrawl"):
-            contents["livecrawl"] = kwargs["livecrawl"]
+        if kwargs.get("max_age_hours") is not None:
+            try:
+                contents["maxAgeHours"] = int(kwargs["max_age_hours"])
+            except (TypeError, ValueError):
+                pass
+        elif kwargs.get("livecrawl"):
+            # `livecrawl` is deprecated in the Search API. Keep the CLI flag
+            # working by translating common legacy values to maxAgeHours.
+            legacy = str(kwargs["livecrawl"]).lower()
+            if legacy in {"always", "preferred"}:
+                contents["maxAgeHours"] = 0
+            elif legacy == "never":
+                contents["maxAgeHours"] = -1
         if kwargs.get("subpages") is not None:
             try:
                 contents["subpages"] = int(kwargs["subpages"])
             except (TypeError, ValueError):
                 pass
         if kwargs.get("subpage_target"):
-            contents["subpage_target"] = kwargs["subpage_target"]
-        payload["contents"] = contents
+            contents["subpageTarget"] = kwargs["subpage_target"]
+        if kwargs.get("extras"):
+            contents["extras"] = kwargs["extras"]
+        if contents:
+            payload["contents"] = contents
 
         if kwargs.get("category"):
             payload["category"] = kwargs["category"]
@@ -79,7 +117,9 @@ class ExaProvider(SearchProvider):
                     provider=self.name,
                     score=float(r.get("score") or 0.0),
                     published=r.get("publishedDate"),
+                    content=text if isinstance(text, str) and text else None,
                     summary=summary_val if isinstance(summary_val, str) else None,
+                    favicon=r.get("favicon") if isinstance(r.get("favicon"), str) else None,
                     raw=r,
                 )
             )

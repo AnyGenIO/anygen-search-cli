@@ -55,7 +55,7 @@ async def _run_one(
     query: str,
     count: int,
     use_cache: bool,
-    cache: ResultCache,
+    cache: ResultCache | None,
     extra: dict,
     filters: Filters | None = None,
     cache_ttl_override: int | None = None,
@@ -68,7 +68,7 @@ async def _run_one(
     extras_out: dict = {}
     # Cache key params should not include private flags like _retries.
     cache_params = {k: v for k, v in {"count": count, **eff_extra}.items() if not str(k).startswith("_")}
-    if use_cache:
+    if use_cache and cache is not None:
         hit = cache.get(provider_name, eff_query, cache_params)
         if hit is not None:
             results = [SearchResult(**r) for r in hit]
@@ -95,7 +95,7 @@ async def _run_one(
     except Exception as e:  # noqa: BLE001
         return provider_name, None, f"{type(e).__name__}: {e}", extras_out
 
-    if use_cache:
+    if use_cache and cache is not None:
         cache.set(
             provider_name,
             eff_query,
@@ -116,7 +116,7 @@ async def _run_many(
     filters: Filters | None = None,
     cache_ttl_override: int | None = None,
 ) -> tuple[list[SearchResult], dict[str, str], dict[str, dict]]:
-    cache = ResultCache()
+    cache: ResultCache | None = ResultCache() if use_cache else None
     try:
         coros = [
             _run_one(p, query, count, use_cache, cache, extra, filters, cache_ttl_override)
@@ -124,7 +124,8 @@ async def _run_many(
         ]
         outcomes = await asyncio.gather(*coros)
     finally:
-        cache.close()
+        if cache is not None:
+            cache.close()
 
     merged: list[SearchResult] = []
     errors: dict[str, str] = {}
@@ -234,7 +235,7 @@ def search(
     ),
     livecrawl: Optional[str] = typer.Option(
         None, "--livecrawl",
-        help="Exa contents.livecrawl: always|fallback|never.",
+        help="Legacy Exa freshness alias: always|fallback|never (mapped to maxAgeHours).",
     ),
     auto: bool = typer.Option(
         False, "--auto",
@@ -252,6 +253,26 @@ def search(
         None, "--days",
         help="Tavily news mode: results from past N days.",
     ),
+    chunks_per_source: Optional[int] = typer.Option(
+        None, "--chunks-per-source",
+        help="Tavily chunks per source for advanced/fast depth (1-3).",
+    ),
+    additional_query: list[str] = typer.Option(
+        None, "--additional-query",
+        help="Exa extra query variation for deep-search modes; repeatable.",
+    ),
+    max_age_hours: Optional[int] = typer.Option(
+        None, "--max-age-hours",
+        help="Exa contents.maxAgeHours: 0 live, -1 cache-only, omit for default fallback.",
+    ),
+    highlights: bool = typer.Option(
+        False, "--highlights",
+        help="Exa contents.highlights=True for relevant excerpts.",
+    ),
+    context_threshold: Optional[str] = typer.Option(
+        None, "--context-threshold",
+        help="Brave LLM Context threshold: strict | balanced | lenient | disabled.",
+    ),
     # ---- 2026-04 new options (provider doc updates) -------------------------
     exact: bool = typer.Option(
         False, "--exact",
@@ -263,7 +284,7 @@ def search(
     ),
     exa_type: Optional[str] = typer.Option(
         None, "--exa-type",
-        help="Exa type: auto | fast | instant | neural | keyword | deep-reasoning.",
+        help="Exa type: auto | fast | instant | neural | deep-lite | deep | deep-reasoning.",
     ),
     include_favicon: bool = typer.Option(
         False, "--include-favicon",
@@ -275,6 +296,7 @@ def search(
     ),
 ) -> None:
     """Run a search across one, many, or all providers."""
+    mode_key = (mode or "").lower() or None
     try:
         filters = Filters.from_cli(
             time=time, lang=lang, region=region, sites=site, exclude=exclude
@@ -301,7 +323,7 @@ def search(
     elif provider:
         providers = list(provider)
     else:
-        providers = providers_for_mode(mode)
+        providers = providers_for_mode(mode_key)
 
     if not providers:
         err_console.print(
@@ -310,32 +332,45 @@ def search(
         raise typer.Exit(2)
 
     extra: dict = {}
-    if mode == "news":
+    if mode_key == "news":
         extra["topic"] = "news"
         extra["freshness"] = "pw"
-    elif mode == "academic":
+    elif mode_key == "academic":
         extra["category"] = "research paper"
-    elif mode == "realtime":
+    elif mode_key == "realtime":
         extra["freshness"] = "pd"
-    elif mode == "shopping":
+    elif mode_key == "shopping":
         extra["search_type"] = "shopping"
-    elif mode == "video":
+    elif mode_key == "video":
         extra["search_type"] = "videos"
-    elif mode == "images":
+    elif mode_key == "images":
         extra["search_type"] = "images"
-    elif mode == "places":
+    elif mode_key == "places":
         extra["search_type"] = "places"
-    elif mode == "answer":
+    elif mode_key == "answer":
         # Auto-enable answer panel.
         answer = True
-    elif mode == "deep":
+    elif mode_key == "deep":
         extra["type"] = "deep-reasoning"
         extra["summary"] = True
-    elif mode == "fast":
+    elif mode_key == "fast":
         # Latency-first: Exa instant + Tavily ultra-fast. Both providers will
         # ignore params they don't understand thanks to per-provider kwarg gates.
         extra["type"] = "instant"  # Exa
         extra["search_depth"] = "ultra-fast"  # Tavily
+    elif mode_key == "recall":
+        # Recall-first preset: fan out broadly and ask providers for richer
+        # candidate snippets/content. This costs more than the default path.
+        extra["type"] = "deep-reasoning"  # Exa
+        extra["highlights"] = True  # Exa
+        extra["summary"] = True  # Exa / Firecrawl
+        extra["search_depth"] = "advanced"  # Tavily
+        extra["chunks_per_source"] = 3  # Tavily
+        extra["auto_parameters"] = True  # Tavily
+        extra["search_kind"] = "context"  # Brave LLM Context
+        extra["context_threshold_mode"] = "lenient"  # Brave LLM Context
+        extra["sources"] = ["web", "news"]  # Firecrawl
+        extra["with_content"] = True  # Firecrawl / Jina
 
     # ---- v0.2 flags -> provider kwargs -----------------------------------
     if answer:
@@ -353,6 +388,16 @@ def search(
         extra["include_raw_content"] = "markdown"
     if days is not None:
         extra["days"] = days
+    if chunks_per_source is not None:
+        extra["chunks_per_source"] = chunks_per_source
+    if additional_query:
+        extra["additional_queries"] = list(additional_query)
+    if max_age_hours is not None:
+        extra["max_age_hours"] = max_age_hours
+    if highlights:
+        extra["highlights"] = True
+    if context_threshold:
+        extra["context_threshold_mode"] = context_threshold
     if retries is not None:
         extra["_retries"] = retries
     # ---- 2026-04 new flag wiring ----------------------------------------
@@ -398,12 +443,12 @@ def search(
     }
     meta: dict = {
         "query": query,
-        "mode": mode or "default",
+        "mode": mode_key or "default",
         "providers_queried": providers,
         "total_results": len(merged),
         "cached": cache_status,
     }
-    if (answer or mode == "answer") and tavily_answer:
+    if (answer or mode_key == "answer") and tavily_answer:
         meta["answer"] = tavily_answer
     # Surface per-provider usage when --include-usage was set.
     usage_by_provider = {
@@ -420,7 +465,7 @@ def search(
         meta["agent_preset"] = True
 
     # ---- Top-of-output answer panel (human formats only) -----------------
-    if (answer or mode == "answer") and tavily_answer and fmt in ("table", "markdown", "md"):
+    if (answer or mode_key == "answer") and tavily_answer and fmt in ("table", "markdown", "md"):
         if fmt == "table":
             console.print(
                 Panel(
@@ -506,7 +551,7 @@ def config() -> None:
     table.add_row("version", __version__)
     table.add_row("timeout (s)", str(timeout_seconds()))
     table.add_row("cache_ttl (s)", str(cache_ttl()))
-    table.add_row("cache_dir", str(cache_dir()))
+    table.add_row("cache_dir", str(s.get("path") or cache_dir()))
     table.add_row("cache_entries", str(s["entries"]))
     table.add_row("cache_size_bytes", str(s["size_bytes"]))
     table.add_row("configured_providers", ", ".join(configured_providers()) or "(none)")
@@ -517,9 +562,10 @@ def config() -> None:
 def cache_clear() -> None:
     """Clear all cached search results."""
     c = ResultCache()
+    path = c.stats().get("path") or str(cache_dir())
     n = c.clear()
     c.close()
-    console.print(f"[green]Cleared[/] {n} cache entries from {cache_dir()}")
+    console.print(f"[green]Cleared[/] {n} cache entries from {path}")
 
 
 @cache_app.command("stats")

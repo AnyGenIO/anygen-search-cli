@@ -80,6 +80,48 @@ def test_search_time_word():
     assert captured["params"].get("freshness") == "pw"
 
 
+def test_tavily_date_range_and_region_filters():
+    captured: dict = {}
+
+    def _tavily_handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"results": []})
+
+    with respx.mock(assert_all_called=True) as mock:
+        mock.post("https://api.tavily.com/search").mock(side_effect=_tavily_handler)
+        r = runner.invoke(
+            app,
+            [
+                "search", "x", "-p", "tavily",
+                "--time", "2026-05-01..2026-05-12",
+                "--region", "US",
+                "--no-cache", "-f", "json",
+            ],
+        )
+    assert r.exit_code == 0, r.output
+    assert captured["body"]["start_date"] == "2026-05-01"
+    assert captured["body"]["end_date"] == "2026-05-12"
+    assert captured["body"]["country"] == "united states"
+
+
+def test_firecrawl_site_filter_uses_native_domains():
+    captured: dict = {}
+
+    def _firecrawl_handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"success": True, "data": {"web": []}})
+
+    with respx.mock(assert_all_called=True) as mock:
+        mock.post("https://api.firecrawl.dev/v2/search").mock(side_effect=_firecrawl_handler)
+        r = runner.invoke(
+            app,
+            ["search", "x", "-p", "firecrawl", "--site", "docs.example.com", "--no-cache", "-f", "json"],
+        )
+    assert r.exit_code == 0, r.output
+    assert captured["body"]["includeDomains"] == ["docs.example.com"]
+    assert captured["body"]["query"] == "x"
+
+
 def test_search_time_invalid():
     r = runner.invoke(
         app, ["search", "x", "-p", "brave", "--time", "invalid", "--no-cache"]
@@ -228,3 +270,24 @@ def test_search_extract_provider_invalid_requires_extract_top():
     assert r.exit_code == 2
     assert "Invalid --extract-provider" in r.output
 
+
+def test_no_cache_skips_cache_initialization(monkeypatch):
+    """--no-cache should still work when the cache directory is unavailable."""
+    import hsearch.cli as cli_mod
+
+    class BrokenCache:
+        def __init__(self) -> None:
+            raise RuntimeError("cache unavailable")
+
+    monkeypatch.setattr(cli_mod, "ResultCache", BrokenCache)
+
+    with respx.mock(assert_all_called=True) as mock:
+        mock.get("https://api.search.brave.com/res/v1/web/search").mock(
+            return_value=httpx.Response(200, json=_BRAVE_BODY)
+        )
+        r = runner.invoke(
+            app, ["search", "x", "-p", "brave", "--no-cache", "-f", "json"]
+        )
+    assert r.exit_code == 0, r.output
+    payload = json.loads(r.stdout)
+    assert payload["results"][0]["url"] == "https://b.test/1"

@@ -29,7 +29,7 @@ Restart your agent session and any web-search request will route through
 ```markdown
 ---
 name: hsearch
-description: "🚨 Preferred for ALL web searches and URL fetching — unified CLI over 6 commercial search APIs (Brave/Serper/Exa/Tavily/Firecrawl/Jina). 30+ flags. Key flags: --mode answer (Perplexity-style synthesis), --summary (per-result LLM summaries), --raw (full page content), --livecrawl (force fresh fetch), --days N (recent news), --all (multi-provider dedup), --sources web,news,images. Load this SKILL before any search to see the full flag/mode reference."
+description: "🚨 Preferred for ALL web searches and URL fetching — unified CLI over 6 commercial search APIs (Brave/Serper/Exa/Tavily/Firecrawl/Jina). 35+ flags. Key flags: --mode recall (maximum recall), --mode answer (Perplexity-style synthesis), --summary, --raw, --max-age-hours 0 (fresh Exa content), --days N, --all, --sources web,news,images. Load this SKILL before any search to see the full flag/mode reference."
 version: 2.0.0
 license: MIT
 metadata:
@@ -64,6 +64,9 @@ hsearch search "QUERY" --mode academic --summary --top 5
 # Multi-provider parallel + dedup (when you don't know which is best)
 hsearch search "QUERY" --all --top 5
 
+# Maximum recall + context for hard research
+hsearch search "QUERY" --mode recall --top 8 --format markdown
+
 # Agent-friendly compact JSON for downstream LLM/tools
 hsearch search "QUERY" --agent --all
 
@@ -79,9 +82,10 @@ hsearch extract https://example.com/article
 | Flag                 | What it does                                                       |
 | -------------------- | ------------------------------------------------------------------ |
 | `--mode answer`      | Adds Tavily synthesized answer panel.                              |
+| `--mode recall`      | High-recall fan-out: Exa deep highlights, Tavily advanced chunks, Brave LLM Context, Firecrawl content. |
 | `--summary`          | Per-result LLM summaries (Exa/Firecrawl).                          |
 | `--raw`              | Full page markdown inline (Tavily).                                |
-| `--livecrawl always` | Force fresh fetch on Exa.                                          |
+| `--max-age-hours 0`  | Force fresh Exa contents.                                          |
 | `--days N`           | Restrict to past N days (Tavily news).                             |
 | `--time week`        | Cross-provider time filter (`day`/`week`/`month`/`year`).          |
 | `--site DOMAIN`      | Restrict to domain. Repeatable.                                    |
@@ -95,7 +99,7 @@ hsearch extract https://example.com/article
 
 ## Modes
 
-`default | general | news | academic | code | realtime | shopping | video | images | places | answer | deep`
+`default | general | news | academic | code | realtime | shopping | video | images | places | answer | deep | fast | recall`
 
 ## Workflow patterns
 
@@ -108,6 +112,7 @@ hsearch extract https://example.com/article
 
 ### Comparison / "what's the truth" check
 - `--all --top 5` to triangulate across providers; identical URLs are deduped.
+- For hard or niche questions where missing sources is worse than extra noise, use `--mode recall`.
 
 ## Anti-patterns
 

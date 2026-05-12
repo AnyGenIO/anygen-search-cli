@@ -138,7 +138,9 @@ def apply_to_exa(query: str, f: Filters, extra: dict[str, Any]) -> tuple[str, di
         out["include_domains"] = [s.lstrip("*.") for s in f.sites]
     if f.exclude:
         out["exclude_domains"] = [s.lstrip("*.") for s in f.exclude]
-    # Exa has no native lang/region — silently ignored.
+    if f.region:
+        out["user_location"] = f.region
+    # Exa has no native language filter — silently ignored.
     return query, out
 
 
@@ -146,8 +148,10 @@ def apply_to_tavily(query: str, f: Filters, extra: dict[str, Any]) -> tuple[str,
     out = dict(extra)
     if f.time in {"day", "week", "month", "year"}:
         out["time_range"] = f.time
+    elif f.time and _DATE_RE.match(f.time):
+        out["start_date"], out["end_date"] = f.time.split("..")
     if f.region:
-        out["country"] = f.region
+        out["country"] = _tavily_country(f.region)
     if f.sites:
         out["include_domains"] = [s.lstrip("*.") for s in f.sites]
     if f.exclude:
@@ -163,6 +167,12 @@ def apply_to_firecrawl(query: str, f: Filters, extra: dict[str, Any]) -> tuple[s
         out["country"] = f.region
     if f.lang:
         out["lang"] = f.lang
+    if f.sites and not f.exclude:
+        out["include_domains"] = [s.lstrip("*.") for s in f.sites]
+        return query, out
+    if f.exclude and not f.sites:
+        out["exclude_domains"] = [s.lstrip("*.") for s in f.exclude]
+        return query, out
     return _site_query_suffix(query, f.sites, f.exclude), out
 
 
@@ -170,8 +180,32 @@ def apply_to_jina(query: str, f: Filters, extra: dict[str, Any]) -> tuple[str, d
     out = dict(extra)
     # Jina doesn't have rich filters; just append operators and pass-through lang as a header hint.
     if f.lang:
-        out["lang"] = f.lang
+        out["locale"] = f.lang
     return _site_query_suffix(query, f.sites, f.exclude), out
+
+
+_TAVILY_COUNTRIES = {
+    "AU": "australia",
+    "BR": "brazil",
+    "CA": "canada",
+    "CN": "china",
+    "DE": "germany",
+    "ES": "spain",
+    "FR": "france",
+    "GB": "united kingdom",
+    "IN": "india",
+    "IT": "italy",
+    "JP": "japan",
+    "KR": "south korea",
+    "MX": "mexico",
+    "NL": "netherlands",
+    "SG": "singapore",
+    "US": "united states",
+}
+
+
+def _tavily_country(region: str) -> str:
+    return _TAVILY_COUNTRIES.get(region.upper(), region.lower())
 
 
 def apply_to_searxng(query: str, f: Filters, extra: dict[str, Any]) -> tuple[str, dict[str, Any]]:

@@ -5,8 +5,8 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-40%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.2.2-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-0.2.3-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -22,12 +22,13 @@ or script is wasteful.**
 - 🔑 **Auto-detects** which provider keys you've set; ignores the rest.
 - 🔀 **Routes** queries by mode (`news` / `academic` / `realtime` / `answer` / …) to the best-suited provider.
 - 🌐 **Parallel `--all`** — query every configured provider concurrently and dedup by URL.
+- 🎯 **High-recall `--mode recall`** — Exa deep reasoning + Tavily advanced chunks + Brave LLM Context + Firecrawl web/news content.
 - 🤖 **Perplexity-style** `--mode answer` — synthesized answer panel + sources.
 - 📄 **Per-result summaries** (`--summary`) and **raw markdown** (`--raw`).
-- 🆕 **Live crawl** (`--livecrawl always`), **time windows** (`--days 7`, `--time week`), **site filters**.
+- 🆕 **Fresh Exa content** (`--max-age-hours 0`), **time windows** (`--days 7`, `--time week`), **site filters**.
 - 💾 **Disk cache** (1h TTL by default) — same query won't burn API credits twice.
 - 📦 **5 output formats**: `table` · `json` · `jsonl` · `markdown` · `urls`.
-- 🧪 **40 mocked tests**, no real keys needed to run.
+- 🧪 **73 mocked tests**, no real keys needed to run.
 
 ---
 
@@ -87,6 +88,9 @@ hsearch search "what's new in Claude Opus 4.7" --mode answer --days 7
 # Multi-provider, parallel, deduped, JSON for piping into jq/agents
 hsearch search "quantum chips Q1 2026" --all --top 8 --format json
 
+# Maximize recall and source context for hard research questions
+hsearch search "best sparse attention papers for long context" --mode recall --top 8 --format markdown
+
 # Agent-friendly compact JSON preset (equivalent to --format json --top 5 unless overridden)
 hsearch search "quantum chips Q1 2026" --agent --all
 
@@ -99,8 +103,8 @@ hsearch search "vector DB benchmarks" --site arxiv.org --exclude reddit.com
 # Academic / research with neural search + LLM summaries
 hsearch search "speculative decoding" --mode academic --summary --top 5
 
-# Force fresh fetch (bypass Exa's stale snapshot cache)
-hsearch search "OpenAI Devday 2026" --provider exa --livecrawl always
+# Force fresh Exa contents
+hsearch search "OpenAI Devday 2026" --provider exa --max-age-hours 0
 
 # Convert any URL into clean markdown (free via Jina Reader)
 hsearch extract https://anthropic.com/news/claude-opus-4-7
@@ -208,6 +212,8 @@ hsearch search "kubernetes 1.32 changes" --extract-top 3 --format markdown
 | `places`   | serper → brave                             | Places / local search.                                     |
 | `answer`   | tavily → brave                             | Synthesized **Answer panel** + sources. ⭐                 |
 | `deep`     | exa                                        | Deep-reasoning / long-form research synthesis.             |
+| `fast`     | exa → tavily                               | Low-latency search: Exa instant + Tavily ultra-fast.        |
+| `recall`   | exa → tavily → brave → serper → firecrawl → jina | Broad, high-context search for maximum recall.       |
 
 > If your preferred providers for a mode aren't configured, hsearch transparently falls back to whatever IS configured.
 
@@ -227,7 +233,7 @@ policy** (exponential backoff on 429/5xx, see `--retries`), **one cache**, and
 
 ```bash
 pip install -e ".[dev]"
-pytest                    # 40 tests, ~1.2s, no real keys needed
+pytest                    # 73 tests, ~2.5s, no real keys needed
 ```
 
 All providers are mocked via `respx`. To add a new provider:

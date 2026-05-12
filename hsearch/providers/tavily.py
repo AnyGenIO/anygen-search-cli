@@ -37,7 +37,7 @@ class TavilyProvider(SearchProvider):
             payload["auto_parameters"] = bool(kwargs["auto_parameters"])
         if kwargs.get("chunks_per_source") is not None:
             try:
-                payload["chunks_per_source"] = int(kwargs["chunks_per_source"])
+                payload["chunks_per_source"] = min(max(int(kwargs["chunks_per_source"]), 1), 3)
             except (TypeError, ValueError):
                 pass
         if "include_raw_content" in kwargs and kwargs["include_raw_content"] is not None:
@@ -63,6 +63,10 @@ class TavilyProvider(SearchProvider):
             payload["include_answer"] = kwargs["include_answer"]
         if kwargs.get("time_range"):
             payload["time_range"] = kwargs["time_range"]
+        if kwargs.get("start_date"):
+            payload["start_date"] = kwargs["start_date"]
+        if kwargs.get("end_date"):
+            payload["end_date"] = kwargs["end_date"]
         if kwargs.get("country"):
             payload["country"] = kwargs["country"]
         if kwargs.get("include_domains"):

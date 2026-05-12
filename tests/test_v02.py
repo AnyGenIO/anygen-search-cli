@@ -48,7 +48,7 @@ async def test_tavily_chunks_per_source():
         mock.post("https://api.tavily.com/search").mock(side_effect=_h)
         async with TavilyProvider() as p:
             await p.search("q", count=3, chunks_per_source=5, search_depth="advanced")
-    assert captured["body"]["chunks_per_source"] == 5
+    assert captured["body"]["chunks_per_source"] == 3
     assert captured["body"]["search_depth"] == "advanced"
 
 
@@ -130,7 +130,7 @@ async def test_exa_summary():
 
 
 @pytest.mark.asyncio
-async def test_exa_livecrawl():
+async def test_exa_livecrawl_flag_maps_to_max_age_hours():
     captured: dict = {}
 
     def _h(req: httpx.Request) -> httpx.Response:
@@ -141,11 +141,11 @@ async def test_exa_livecrawl():
         mock.post("https://api.exa.ai/search").mock(side_effect=_h)
         async with ExaProvider() as p:
             await p.search("q", count=1, livecrawl="always")
-    assert captured["body"]["contents"]["livecrawl"] == "always"
+    assert captured["body"]["contents"]["maxAgeHours"] == 0
 
 
 @pytest.mark.asyncio
-async def test_exa_use_autoprompt():
+async def test_exa_highlights_and_additional_queries():
     captured: dict = {}
 
     def _h(req: httpx.Request) -> httpx.Response:
@@ -155,8 +155,17 @@ async def test_exa_use_autoprompt():
     with respx.mock(assert_all_called=True) as mock:
         mock.post("https://api.exa.ai/search").mock(side_effect=_h)
         async with ExaProvider() as p:
-            await p.search("q", count=1, use_autoprompt=True, type="deep-reasoning")
-    assert captured["body"]["useAutoprompt"] is True
+            await p.search(
+                "q",
+                count=1,
+                highlights=True,
+                additional_queries=["q variation"],
+                max_age_hours=0,
+                type="deep-reasoning",
+            )
+    assert captured["body"]["contents"]["highlights"] is True
+    assert captured["body"]["contents"]["maxAgeHours"] == 0
+    assert captured["body"]["additionalQueries"] == ["q variation"]
     assert captured["body"]["type"] == "deep-reasoning"
 
 
@@ -288,6 +297,50 @@ async def test_brave_goggles_extra_snippets():
     assert captured["params"]["offset"] == "2"
 
 
+@pytest.mark.asyncio
+async def test_brave_llm_context():
+    captured: dict = {}
+
+    def _h(req: httpx.Request) -> httpx.Response:
+        captured["params"] = dict(req.url.params)
+        return httpx.Response(
+            200,
+            json={
+                "grounding": {
+                    "generic": [
+                        {
+                            "url": "https://b.test/context",
+                            "title": "Context",
+                            "snippets": ["first grounding chunk", "second grounding chunk"],
+                        }
+                    ],
+                    "map": [],
+                },
+                "sources": {
+                    "https://b.test/context": {
+                        "title": "Context",
+                        "age": ["Monday", "2026-05-01", "11 days ago"],
+                    }
+                },
+            },
+        )
+
+    with respx.mock(assert_all_called=True) as mock:
+        mock.get("https://api.search.brave.com/res/v1/llm/context").mock(side_effect=_h)
+        async with BraveProvider() as p:
+            res = await p.search(
+                "q",
+                count=2,
+                search_kind="context",
+                context_threshold_mode="lenient",
+            )
+    assert captured["params"]["context_threshold_mode"] == "lenient"
+    assert captured["params"]["maximum_number_of_urls"] == "2"
+    assert res[0].url == "https://b.test/context"
+    assert res[0].content == "first grounding chunk\n\nsecond grounding chunk"
+    assert res[0].published == "2026-05-01"
+
+
 # ---------- Jina ------------------------------------------------------------
 
 
@@ -412,7 +465,7 @@ def test_cli_answer_mode():
 def test_cli_version_022():
     r = runner.invoke(app, ["--version"])
     assert r.exit_code == 0
-    assert "0.2.2" in r.output
+    assert "0.2.3" in r.output
 
 
 def test_cli_summary_flag_passes_through():

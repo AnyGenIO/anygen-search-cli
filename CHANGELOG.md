@@ -4,6 +4,27 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.2.3] — 2026-05-12
+
+High-recall search update based on current Tavily, Exa, Brave, and Firecrawl docs.
+
+### Added
+- **`--mode recall`** — broad, recall-first preset over Exa, Tavily, Brave, Serper, Firecrawl, and Jina.
+- **Brave LLM Context support** via `search_kind=context`, used automatically by `--mode recall`.
+- **`--chunks-per-source`** — Tavily `chunks_per_source` passthrough for high-context advanced/fast search.
+- **`--highlights`**, **`--additional-query`**, **`--max-age-hours`** — Exa Search API controls for current `contents.*` parameters.
+- **`--context-threshold`** — Brave LLM Context threshold control.
+
+### Changed
+- Exa Search now nests content options under `contents`, requests `highlights` by default, and translates legacy `--livecrawl` values to current `contents.maxAgeHours`.
+- `--time YYYY-MM-DD..YYYY-MM-DD` now maps to Tavily `start_date` / `end_date`.
+- Firecrawl now uses native `includeDomains` / `excludeDomains` filters when only one side is specified.
+- Jina `--lang` now maps to `X-Locale`.
+- Cache initialization now falls back to `/tmp/hsearch-cache`, and `--no-cache` no longer initializes diskcache.
+
+### Tests
+- **73 unit tests passing**.
+
 ## [0.2.2] — 2026-05-07
 
 Tracks 2026-04 provider doc updates: Tavily new params, Exa Fast/Instant search types, Firecrawl v2 categories format.

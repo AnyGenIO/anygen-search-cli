@@ -282,3 +282,57 @@ def test_cli_mode_fast_chooses_exa_instant_and_tavily_ultrafast(monkeypatch):
     assert r.exit_code == 0, r.output
     assert exa_body.get("type") == "instant"
     assert tav_body.get("search_depth") == "ultra-fast"
+
+
+def test_cli_mode_recall_sets_high_recall_params():
+    exa_body: dict = {}
+    tavily_body: dict = {}
+    brave_params: dict = {}
+    firecrawl_body: dict = {}
+    jina_headers: dict = {}
+
+    def _exa_h(req: httpx.Request) -> httpx.Response:
+        exa_body.update(json.loads(req.content.decode()))
+        return httpx.Response(200, json={"results": []})
+
+    def _tavily_h(req: httpx.Request) -> httpx.Response:
+        tavily_body.update(json.loads(req.content.decode()))
+        return httpx.Response(200, json={"results": []})
+
+    def _brave_h(req: httpx.Request) -> httpx.Response:
+        brave_params.update(dict(req.url.params))
+        return httpx.Response(200, json={"grounding": {"generic": [], "map": []}, "sources": {}})
+
+    def _firecrawl_h(req: httpx.Request) -> httpx.Response:
+        firecrawl_body.update(json.loads(req.content.decode()))
+        return httpx.Response(200, json={"success": True, "data": {"web": [], "news": []}})
+
+    def _jina_h(req: httpx.Request) -> httpx.Response:
+        jina_headers.update({k: v for k, v in req.headers.items()})
+        return httpx.Response(200, json={"code": 200, "data": []})
+
+    with respx.mock(assert_all_called=True) as mock:
+        mock.post("https://api.exa.ai/search").mock(side_effect=_exa_h)
+        mock.post("https://api.tavily.com/search").mock(side_effect=_tavily_h)
+        mock.get("https://api.search.brave.com/res/v1/llm/context").mock(side_effect=_brave_h)
+        mock.post("https://google.serper.dev/search").mock(
+            return_value=httpx.Response(200, json={"organic": []})
+        )
+        mock.post("https://api.firecrawl.dev/v2/search").mock(side_effect=_firecrawl_h)
+        mock.post("https://s.jina.ai/").mock(side_effect=_jina_h)
+        r = runner.invoke(
+            app,
+            ["search", "q", "--mode", "recall", "--top", "2", "--no-cache", "-f", "json"],
+        )
+    assert r.exit_code == 0, r.output
+    assert exa_body["type"] == "deep-reasoning"
+    assert exa_body["contents"]["highlights"] is True
+    assert "summary" in exa_body["contents"]
+    assert tavily_body["search_depth"] == "advanced"
+    assert tavily_body["chunks_per_source"] == 3
+    assert tavily_body["auto_parameters"] is True
+    assert brave_params["context_threshold_mode"] == "lenient"
+    assert firecrawl_body["sources"] == ["web", "news"]
+    assert {"type": "markdown"} in firecrawl_body["scrapeOptions"]["formats"]
+    assert {"type": "summary"} in firecrawl_body["scrapeOptions"]["formats"]
+    assert "x-respond-with" not in jina_headers

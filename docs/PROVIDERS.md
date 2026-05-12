@@ -18,6 +18,9 @@ Six providers, each best at something different. Pick based on your job.
 ### "Just give me the best web results"
 → **Tavily** (default mode) or **Brave** (more privacy, less ML-flavored).
 
+### "Maximize recall and source context"
+→ **`--mode recall`**. It fans out to all configured providers and uses high-context settings: Exa deep-reasoning + highlights, Tavily advanced chunks, Brave LLM Context, Firecrawl web/news with markdown, Serper, and Jina.
+
 ### "I need the AI to write me a summary with citations"
 → **Tavily** with `--mode answer`. Has `include_answer` baked in.
 
@@ -35,7 +38,7 @@ Six providers, each best at something different. Pick based on your job.
 For inline content during search: **`--extract-top N`** or **`--raw`** (Tavily).
 
 ### "I want fresh content, not stale crawl snapshots"
-→ **Exa** with `--livecrawl always`. Forces a live fetch.
+→ **Exa** with `--max-age-hours 0`. This maps to the current Exa `contents.maxAgeHours` freshness control.
 
 ### "Multi-source merge: web + news + images all at once"
 → **Firecrawl** with `--sources web,news,images`.
@@ -60,6 +63,7 @@ For inline content during search: **`--extract-top N`** or **`--raw`** (Tavily).
 ### Brave
 - Strong privacy story, fast.
 - News results need `freshness=pw|pd|pm` (set automatically by `--mode news`).
+- `--mode recall` uses Brave's **LLM Context** endpoint, which returns pre-extracted grounding snippets with configurable token budgets and relevance threshold.
 
 ### Serper
 - 8 search verticals via `search_type` (web/news/images/videos/shopping/places/scholar/maps).
@@ -67,16 +71,20 @@ For inline content during search: **`--extract-top N`** or **`--raw`** (Tavily).
 
 ### Exa
 - Score reflects neural similarity, not popularity.
-- `livecrawl=fallback` is a smart default cost-wise.
+- `contents.highlights=True` is the best default for agent snippets; `hsearch` uses it by default and exposes `--highlights`.
+- `--max-age-hours 0` forces fresh content; `--livecrawl` is kept as a legacy alias and translated to the current freshness parameter.
 - Has `category="research paper"` for academic recall.
+- `--additional-query` can add query variations for deep-search variants.
 
 ### Tavily
 - The only one with a real native **answer synthesis** (`include_answer`).
 - `auto_parameters=True` lets it pick search depth — useful when you don't know what you're looking for.
+- `search_depth=advanced` plus `chunks_per_source=3` gives stronger per-source context for detailed searches.
 - `include_raw_content="markdown"` returns the page body as markdown.
 
 ### Firecrawl
 - Multi-source endpoint can return web + news + images in one call.
+- Native `includeDomains` / `excludeDomains` filters are used when possible.
 - LLM extract pipeline available (advanced; not exposed via current `hsearch` flags).
 
 ### Jina

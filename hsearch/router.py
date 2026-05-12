@@ -20,6 +20,8 @@ MODE_MAP: dict[str, list[str]] = {
     # Latency-first preset: Exa instant (~0.4s) + Tavily ultra-fast.
     # CLI auto-attaches `type=instant` for Exa and `search_depth=ultra-fast` for Tavily.
     "fast": ["exa", "tavily"],
+    # Recall-first preset: broad fan-out with high-context provider settings.
+    "recall": ["exa", "tavily", "brave", "serper", "firecrawl", "jina"],
 }
 
 ALL_MODES: tuple[str, ...] = tuple(MODE_MAP)

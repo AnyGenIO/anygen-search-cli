@@ -56,11 +56,21 @@ This page is the long-form companion: **every flag, every mode, with examples.**
 | `--answer`, `-a`           | bool     | false    | Tavily synthesized answer panel at top.                                                |
 | `--summary`                | bool     | false    | Per-result LLM summaries (Exa/Firecrawl).                                              |
 | `--raw`                    | bool     | false    | Tavily `include_raw_content="markdown"` — fills `SearchResult.content` (≤2000 chars).  |
-| `--livecrawl`              | string   | —        | Exa `contents.livecrawl`: `always` \| `fallback` \| `never`.                            |
+| `--livecrawl`              | string   | —        | Legacy Exa freshness alias: `always` \| `fallback` \| `never`; prefer `--max-age-hours`. |
 | `--auto`                   | bool     | false    | Tavily `auto_parameters=True` — let Tavily auto-pick depth/topic.                       |
 | `--sources`                | string   | —        | Firecrawl multi-source CSV: `web,news,images`.                                          |
 | `--days`                   | int      | —        | Tavily news mode: results from the past N days.                                         |
 | `--retries`                | int      | 2        | Per-request retries on 429/5xx (exponential backoff).                                   |
+
+### v0.2.3 — recall controls
+
+| Flag                       | Type     | Default  | Description                                                                            |
+| -------------------------- | -------- | -------- | -------------------------------------------------------------------------------------- |
+| `--chunks-per-source`      | int      | —        | Tavily chunks per source for `advanced` / `fast` depth (`1..3`).                        |
+| `--highlights`             | bool     | false    | Exa `contents.highlights=True` for relevant source excerpts.                            |
+| `--additional-query`       | repeat   | —        | Exa extra query variation for deep-search variants.                                     |
+| `--max-age-hours`          | int      | —        | Exa `contents.maxAgeHours`; `0` forces live content, `-1` disables live crawling.        |
+| `--context-threshold`      | string   | —        | Brave LLM Context threshold: `strict` \| `balanced` \| `lenient` \| `disabled`.          |
 
 ### Content extraction
 
@@ -97,6 +107,8 @@ toggle provider-specific extras.
 | `places`   | serper → brave             | `search_type=places`                     |
 | `answer`   | tavily → brave             | enables `--answer`                        |
 | `deep`     | exa                        | `type=deep-reasoning`, `summary=True`    |
+| `fast`     | exa → tavily               | `type=instant`, `search_depth=ultra-fast` |
+| `recall`   | exa → tavily → brave → serper → firecrawl → jina | Exa `deep-reasoning` highlights/summaries, Tavily `advanced` chunks, Brave LLM Context `lenient`, Firecrawl `web,news` with content |
 
 If your configured providers don't include a mode's preferred ones, hsearch
 falls back to *any* configured provider.
@@ -135,16 +147,23 @@ hsearch search "speculative decoding latency" \
 
 ```bash
 hsearch search "site:openai.com new models" \
-  --provider exa --livecrawl always --extract-top 3 --extract-provider firecrawl --format markdown
+  --provider exa --max-age-hours 0 --extract-top 3 --extract-provider firecrawl --format markdown
 ```
 
-### 6. Just give me URLs to feed into a downstream tool
+### 6. Maximum recall for hard research
+
+```bash
+hsearch search "production RAG evaluation failures 2026" \
+  --mode recall --top 8 --format markdown
+```
+
+### 7. Just give me URLs to feed into a downstream tool
 
 ```bash
 hsearch search "kubernetes 1.32 release notes" --format urls --top 10
 ```
 
-### 7. URL extraction (works on anything Jina can read)
+### 8. URL extraction (works on anything Jina can read)
 
 ```bash
 hsearch extract https://github.com/AnyGenIO/anygen-search-cli

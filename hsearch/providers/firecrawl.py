@@ -61,6 +61,10 @@ class FirecrawlProvider(SearchProvider):
             payload["lang"] = kwargs["lang"]
         if kwargs.get("tbs"):
             payload["tbs"] = kwargs["tbs"]
+        if kwargs.get("include_domains"):
+            payload["includeDomains"] = kwargs["include_domains"]
+        if kwargs.get("exclude_domains"):
+            payload["excludeDomains"] = kwargs["exclude_domains"]
 
         # ---- scrapeOptions -------------------------------------------------
         # Build formats based on with_content / summary flags. Both new

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from diskcache import Cache
@@ -21,7 +23,13 @@ class ResultCache:
     """Thin wrapper around diskcache with JSON-serialized values."""
 
     def __init__(self) -> None:
-        self._cache = Cache(str(cache_dir()))
+        try:
+            self._path = cache_dir()
+            self._cache = Cache(str(self._path))
+        except Exception:
+            self._path = Path(tempfile.gettempdir()) / "hsearch-cache"
+            self._path.mkdir(parents=True, exist_ok=True)
+            self._cache = Cache(str(self._path))
 
     def get(self, provider: str, query: str, params: dict[str, Any]) -> Any | None:
         key = _make_key(provider, query, params)
@@ -45,7 +53,7 @@ class ResultCache:
 
     def stats(self) -> dict[str, Any]:
         return {
-            "path": str(cache_dir()),
+            "path": str(self._path),
             "entries": len(self._cache),
             "size_bytes": self._cache.volume(),
         }
