@@ -50,7 +50,7 @@ For inline content during search: **`--extract-top N`** or **`--raw`** (Tavily).
 
 ## Cost-conscious tips
 
-1. **Disk cache is on by default** (`~/.cache/hsearch`, 1h TTL). Same query won't burn a credit twice within the hour. Bump it for stable queries: `HSEARCH_CACHE_TTL=86400`.
+1. **Disk cache is on by default** (`~/.cache/hsearch`, adaptive TTL by mode). Same query won't burn a credit twice inside the selected freshness window. Bump it for stable queries with `--cache-ttl 86400` or `HSEARCH_CACHE_TTL=86400`.
 2. **Jina's free tier is huge** — 1M tokens, no card. Use it as your default `extract` provider.
 3. **Avoid `--all`** when you don't need it; it fans out to every configured provider.
 4. **Pick a mode, not 6 providers**. `--mode academic` only hits Exa.

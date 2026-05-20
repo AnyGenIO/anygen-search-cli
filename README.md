@@ -5,8 +5,8 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-99%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-113%20passing-brightgreen.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -26,9 +26,9 @@ or script is wasteful.**
 - 🤖 **Perplexity-style** `--mode answer` — synthesized answer panel + sources.
 - 📄 **Per-result summaries** (`--summary`) and **raw markdown** (`--raw`).
 - 🆕 **Fresh Exa content** (`--max-age-hours 0`), **time windows** (`--days 7`, `--time week`), **site filters**.
-- 💾 **Disk cache** (1h TTL by default) — same query won't burn API credits twice.
+- 💾 **Smart disk cache** — adaptive TTL by mode, overridable per call.
 - 📦 **5 output formats**: `table` · `json` · `jsonl` · `markdown` · `urls`.
-- 🧪 **73 mocked tests**, no real keys needed to run.
+- 🧪 **113 mocked tests**, no real keys needed to run.
 
 ---
 
@@ -93,7 +93,18 @@ python3 -m hsearch schema
 
 Outputs a complete JSON tool definition (parameters, output schema, examples, tips). An LLM agent can run this once to learn how to use `hsearch` — no manual docs needed.
 
-### 3. Python SDK
+### 3. `hsearch mcp` — native MCP server
+
+Install the optional extra and point MCP-aware clients at the stdio server:
+
+```bash
+pip install -e ".[mcp]"
+hsearch mcp
+```
+
+See [docs/MCP.md](docs/MCP.md) for Claude Desktop and Codex config examples.
+
+### 4. Python SDK
 
 ```python
 from hsearch import search_sync, SearchResult
@@ -185,6 +196,28 @@ hsearch search "rust async runtimes" --format json | jq '.results[].url'
 
 ---
 
+## Cache
+
+The disk cache is enabled by default and now picks a TTL from the selected mode:
+
+| Mode | Default TTL |
+| ---- | ----------- |
+| `realtime`, `news` | 300s |
+| `finance`, `answer` | 900s |
+| `general`, `fast`, `recall`, default | 3600s |
+| `code`, `deep` | 14400s |
+| `academic` | 86400s |
+
+`--cache-ttl SECONDS` overrides the mode default for one call, and JSON output
+includes `meta.cache_ttl_seconds` so agents can see the effective policy.
+
+```bash
+hsearch search "market open today" --mode finance --format json | jq '.meta.cache_ttl_seconds'
+hsearch search "stable API reference" --mode academic --cache-ttl 604800
+```
+
+---
+
 ## Content extraction
 
 `hsearch` doubles as a **URL-to-markdown** tool. Point it at any page and get
@@ -241,6 +274,7 @@ hsearch search "kubernetes 1.32 changes" --extract-top 3 --format markdown
 
 - 📖 **[docs/USAGE.md](docs/USAGE.md)** — every flag, every mode, with examples
 - 🔌 **[docs/PROVIDERS.md](docs/PROVIDERS.md)** — strengths/weaknesses of each provider + how to choose
+- 🧩 **[docs/MCP.md](docs/MCP.md)** — use hsearch as a stdio MCP server
 - 🤖 **[docs/SKILL.md](docs/SKILL.md)** — drop-in [Claude Code](https://docs.claude.com/en/docs/claude-code/skills) / [Hermes Agent](https://github.com/NousResearch/hermes-agent) skill so your agent uses `hsearch` automatically
 
 ---
@@ -282,7 +316,7 @@ policy** (exponential backoff on 429/5xx, see `--retries`), **one cache**, and
 
 ```bash
 pip install -e ".[dev]"
-pytest                    # 73 tests, ~2.5s, no real keys needed
+pytest                    # 113 tests, no real keys needed
 ```
 
 All providers are mocked via `respx`. To add a new provider:

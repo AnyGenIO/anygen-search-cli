@@ -21,6 +21,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+from hsearch.cache_policy import resolve_cache_ttl
 from hsearch.cache import ResultCache
 from hsearch.config import configured_providers
 from hsearch.dedup import dedup_merge
@@ -227,6 +228,17 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     if kwargs.get("sources"):
         src = kwargs["sources"]
         extra["sources"] = [s.strip() for s in src.split(",")] if isinstance(src, str) else src
+    if kwargs.get("location"):
+        extra["location"] = kwargs["location"]
+    if kwargs.get("goggles"):
+        goggles = kwargs["goggles"]
+        extra["goggles"] = [goggles] if isinstance(goggles, str) else list(goggles)
+    if kwargs.get("serper_type"):
+        extra["search_type"] = kwargs["serper_type"]
+    if kwargs.get("page") is not None:
+        extra["page"] = kwargs["page"]
+    if kwargs.get("autocorrect") is not None:
+        extra["autocorrect"] = kwargs["autocorrect"]
     if kwargs.get("livecrawl"):
         extra["livecrawl"] = kwargs["livecrawl"]
     if kwargs.get("auto"):
@@ -257,10 +269,32 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["include_favicon"] = True
     if kwargs.get("include_usage"):
         extra["include_usage"] = True
+    if kwargs.get("include_images"):
+        extra["include_images"] = True
+    if kwargs.get("include_image_descriptions"):
+        extra["include_image_descriptions"] = True
     if kwargs.get("moderation"):
         extra["moderation"] = True
     if kwargs.get("livecrawl_timeout") is not None:
         extra["livecrawl_timeout"] = kwargs["livecrawl_timeout"]
+    if kwargs.get("ignore_invalid_urls"):
+        extra["ignore_invalid_urls"] = True
+    if kwargs.get("firecrawl_scrape_timeout") is not None:
+        extra["scrape_timeout"] = kwargs["firecrawl_scrape_timeout"]
+    if kwargs.get("firecrawl_wait_for") is not None:
+        extra["wait_for"] = kwargs["firecrawl_wait_for"]
+    if kwargs.get("jina_engine"):
+        extra["engine"] = kwargs["jina_engine"]
+    if kwargs.get("jina_respond_with"):
+        extra["respond_with"] = kwargs["jina_respond_with"]
+    if kwargs.get("jina_target_selector"):
+        extra["target_selector"] = kwargs["jina_target_selector"]
+    if kwargs.get("jina_wait_for"):
+        extra["wait_for_selector"] = kwargs["jina_wait_for"]
+    if kwargs.get("jina_remove_selector"):
+        extra["remove_selector"] = kwargs["jina_remove_selector"]
+    if kwargs.get("jina_generated_alt"):
+        extra["with_generated_alt"] = True
 
     return extra
 
@@ -334,6 +368,7 @@ async def search(
     )
     extra = _build_extra(mode=mode, **kwargs)
     mode_key = (mode or "").lower() or None
+    effective_cache_ttl = resolve_cache_ttl(mode_key, cache_ttl)
 
     results, errors, extras_by_provider = await _run_many(
         resolved_providers,
@@ -342,7 +377,7 @@ async def search(
         use_cache=not no_cache,
         extra=extra,
         filters=filters,
-        cache_ttl_override=cache_ttl,
+        cache_ttl_override=effective_cache_ttl,
     )
 
     merged = dedup_merge(results)
@@ -369,6 +404,7 @@ async def search(
         "providers_queried": resolved_providers,
         "total_results": len(merged),
         "cached": cache_status,
+        "cache_ttl_seconds": effective_cache_ttl,
     }
     usage_by_provider = {
         p: extras_by_provider[p]["usage"]

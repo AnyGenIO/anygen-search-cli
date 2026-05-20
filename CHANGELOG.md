@@ -4,6 +4,49 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.4.0] — 2026-05-20
+
+Optimization release: provider drift follow-up, native MCP server mode, and
+adaptive cache TTLs by search mode.
+
+### Added
+- **MCP server mode** — `hsearch mcp` starts a stdio MCP server with `search`,
+  `extract`, `providers`, and `schema` tools. The optional extra is declared as
+  `mcp = ["mcp[cli]>=1.0"]`.
+- **MCP docs** — `docs/MCP.md` includes Claude Desktop and Codex config examples.
+- **Adaptive cache TTLs** — mode defaults now use 5 minutes for
+  `news`/`realtime`, 15 minutes for `finance`/`answer`, 1 hour for
+  `general`/`fast`/`recall`, 4 hours for `code`/`deep`, and 24 hours for
+  `academic`. JSON output now includes `meta.cache_ttl_seconds`.
+- **Provider drift flags**:
+  - Tavily `--include-images` and `--include-image-descriptions`.
+  - Brave `--goggles` and native Place Search handling for `places`.
+  - Serper `--serper-type`, `--page`, `--autocorrect/--no-autocorrect`, and
+    patents endpoint support.
+  - Firecrawl `--ignore-invalid-urls`, `--firecrawl-scrape-timeout`, and
+    `--firecrawl-wait-for`.
+  - Jina `--jina-engine`, `--jina-respond-with`, `--jina-target-selector`,
+    `--jina-wait-for`, `--jina-remove-selector`, and `--jina-generated-alt`.
+- **Provider audit doc** — `docs/PROVIDER-DRIFT-2026-Q4.md` records findings,
+  implemented flags, and skipped enterprise/niche items.
+
+### Changed
+- Version bumped to `0.4.0`.
+- `--cache-ttl` remains the explicit override and now takes precedence over
+  mode-derived defaults everywhere in the SDK/CLI.
+- `--no-cache` documentation now matches behavior: it bypasses cache reads and
+  writes.
+
+### Tests
+- **113 unit tests passing**.
+- New coverage: MCP tool registration/direct calls, adaptive cache policy and
+  engine metadata, Tavily/Brave/Serper/Firecrawl/Jina drift wiring.
+
+### Verified
+- `.venv/bin/pytest -q`
+- `.venv/bin/hsearch --version`
+- `.venv/bin/hsearch mcp --help`
+
 ## [0.3.1] — 2026-05-20
 
 API alignment update: verified all 6 providers against their latest official docs (2026-05).

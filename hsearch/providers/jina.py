@@ -46,10 +46,16 @@ class JinaProvider(SearchProvider):
             headers["X-Respond-With"] = str(kwargs["respond_with"])
         if kwargs.get("target_selector"):
             headers["X-Target-Selector"] = str(kwargs["target_selector"])
+        if kwargs.get("wait_for_selector"):
+            headers["X-Wait-For-Selector"] = str(kwargs["wait_for_selector"])
+        if kwargs.get("remove_selector"):
+            headers["X-Remove-Selector"] = str(kwargs["remove_selector"])
         if kwargs.get("preset"):
             headers["X-Preset"] = str(kwargs["preset"])
         if kwargs.get("retain_images"):
             headers["X-Retain-Images"] = str(kwargs["retain_images"])
+        if kwargs.get("with_generated_alt"):
+            headers["X-With-Generated-Alt"] = "true"
         payload = {"q": query}
         resp = await self._request("POST", SEARCH_ENDPOINT, headers=headers, json=payload)
         body = resp.json()

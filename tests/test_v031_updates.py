@@ -465,4 +465,4 @@ def test_cli_mode_finance():
 def test_cli_version_031():
     r = runner.invoke(app, ["--version"])
     assert r.exit_code == 0
-    assert "0.3.1" in r.output
+    assert "0.4.0" in r.output

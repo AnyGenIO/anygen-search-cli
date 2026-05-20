@@ -84,6 +84,11 @@ SEARCH_SCHEMA: dict[str, Any] = {
                         "description": "ISO 3166 country code (US, CN, JP, ...)",
                         "cli_flag": "--region / -r",
                     },
+                    "location": {
+                        "type": "string",
+                        "description": "Provider location hint for local/geotargeted searches.",
+                        "cli_flag": "--location",
+                    },
                     "site": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -126,6 +131,11 @@ SEARCH_SCHEMA: dict[str, Any] = {
                         "description": "Disable result cache.",
                         "cli_flag": "--no-cache",
                     },
+                    "cache_ttl": {
+                        "type": "integer",
+                        "description": "Override adaptive cache TTL in seconds.",
+                        "cli_flag": "--cache-ttl",
+                    },
                     "answer_depth": {
                         "type": "string",
                         "enum": ["basic", "advanced"],
@@ -143,6 +153,30 @@ SEARCH_SCHEMA: dict[str, Any] = {
                         "description": "Exa: livecrawl timeout in milliseconds.",
                         "cli_flag": "--livecrawl-timeout",
                     },
+                    "goggles": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Brave: Goggle URL or inline definition.",
+                        "cli_flag": "--goggles",
+                    },
+                    "serper_type": {
+                        "type": "string",
+                        "enum": ["search", "news", "images", "videos", "shopping", "places", "scholar", "patents"],
+                        "description": "Serper endpoint override.",
+                        "cli_flag": "--serper-type",
+                    },
+                    "include_images": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Tavily: include query/result images.",
+                        "cli_flag": "--include-images",
+                    },
+                    "ignore_invalid_urls": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Firecrawl: filter out URLs invalid for follow-on scrape endpoints.",
+                        "cli_flag": "--ignore-invalid-urls",
+                    },
                 },
             },
             "output_schema": {
@@ -158,6 +192,7 @@ SEARCH_SCHEMA: dict[str, Any] = {
                                 "items": {"type": "string"},
                             },
                             "total_results": {"type": "integer"},
+                            "cache_ttl_seconds": {"type": "integer"},
                             "answer": {
                                 "type": "string",
                                 "description": "Tavily synthesized answer (when --answer is used)",

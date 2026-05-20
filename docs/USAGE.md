@@ -83,8 +83,13 @@ This page is the long-form companion: **every flag, every mode, with examples.**
 
 | Flag                       | Type     | Default     | Description                                                  |
 | -------------------------- | -------- | ----------- | ------------------------------------------------------------ |
-| `--no-cache`               | bool     | false       | Bypass cache for this call (still writes back).              |
-| `--cache-ttl`              | int      | (3600s)     | Override TTL in seconds for this call only.                  |
+| `--no-cache`               | bool     | false       | Bypass cache reads and writes for this call.                 |
+| `--cache-ttl`              | int      | adaptive    | Override TTL in seconds for this call only.                  |
+
+Default TTLs are adaptive by mode: `news`/`realtime` use 300s,
+`finance`/`answer` use 900s, `general`/`fast`/`recall` use 3600s,
+`code`/`deep` use 14400s, and `academic` uses 86400s. JSON output includes
+`meta.cache_ttl_seconds`.
 
 ---
 
@@ -183,6 +188,7 @@ hsearch extract URL1 URL2 URL3 --concurrency 4 --format json
     "mode": "default",
     "providers_queried": ["tavily"],
     "total_results": 1,
+    "cache_ttl_seconds": 3600,
     "cached": {"tavily": false}
   },
   "results": [
