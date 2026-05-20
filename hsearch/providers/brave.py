@@ -11,6 +11,7 @@ NEWS_ENDPOINT = "https://api.search.brave.com/res/v1/news/search"
 VIDEOS_ENDPOINT = "https://api.search.brave.com/res/v1/videos/search"
 IMAGES_ENDPOINT = "https://api.search.brave.com/res/v1/images/search"
 LLM_CONTEXT_ENDPOINT = "https://api.search.brave.com/res/v1/llm/context"
+PLACE_ENDPOINT = "https://api.search.brave.com/res/v1/local/place_search"
 
 KIND_ENDPOINTS = {
     "web": WEB_ENDPOINT,
@@ -22,6 +23,8 @@ KIND_ENDPOINTS = {
     "context": LLM_CONTEXT_ENDPOINT,
     "llm": LLM_CONTEXT_ENDPOINT,
     "llm_context": LLM_CONTEXT_ENDPOINT,
+    "place": PLACE_ENDPOINT,
+    "places": PLACE_ENDPOINT,
 }
 
 
@@ -31,12 +34,14 @@ class BraveProvider(SearchProvider):
 
     async def _search(self, query: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
         kind = (kwargs.get("search_kind") or kwargs.get("search_type") or "web").lower()
-        # Brave doesn't natively expose shopping/places — degrade to web search.
-        if kind in ("shopping", "places"):
+        # Brave doesn't natively expose shopping — degrade to web search.
+        if kind == "shopping":
             kind = "web"
         url = KIND_ENDPOINTS.get(kind, WEB_ENDPOINT)
         if url == LLM_CONTEXT_ENDPOINT:
             return await self._search_context(query, count=count, **kwargs)
+        if url == PLACE_ENDPOINT:
+            return await self._search_places(query, count=count, **kwargs)
         # Brave caps count at 20 per page.
         params: dict[str, Any] = {
             "q": query,
@@ -47,11 +52,16 @@ class BraveProvider(SearchProvider):
             ("country", "country"),
             ("search_lang", "search_lang"),
             ("goggles_id", "goggles_id"),
+            ("goggles", "goggles"),
             ("result_filter", "result_filter"),
             ("units", "units"),
             ("offset", "offset"),
             ("safesearch", "safesearch"),
             ("ui_lang", "ui_lang"),
+            ("text_decorations", "text_decorations"),
+            ("operators", "operators"),
+            ("include_fetch_metadata", "include_fetch_metadata"),
+            ("enable_rich_callback", "enable_rich_callback"),
         ):
             v = kwargs.get(src)
             if v is not None and v != "":
@@ -60,6 +70,8 @@ class BraveProvider(SearchProvider):
             params["extra_snippets"] = "true"
         if kwargs.get("spellcheck"):
             params["spellcheck"] = "true"
+        if kwargs.get("summary"):
+            params["summary"] = "true"
 
         headers = {
             "Accept": "application/json",
@@ -86,6 +98,64 @@ class BraveProvider(SearchProvider):
                     provider=self.name,
                     score=0.0,
                     published=r.get("page_age") or r.get("age") or r.get("published"),
+                    raw=r,
+                )
+            )
+        return out
+
+    async def _search_places(self, query: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
+        """Use Brave Place Search for geographic POI discovery."""
+        params: dict[str, Any] = {
+            "q": query,
+            "count": min(max(count, 1), 50),
+        }
+        for src, dst in (
+            ("latitude", "latitude"),
+            ("longitude", "longitude"),
+            ("radius", "radius"),
+            ("location", "location"),
+            ("country", "country"),
+            ("search_lang", "search_lang"),
+            ("ui_lang", "ui_lang"),
+            ("units", "units"),
+            ("safesearch", "safesearch"),
+        ):
+            v = kwargs.get(src)
+            if v is not None and v != "":
+                params[dst] = v
+        if kwargs.get("spellcheck") is not None:
+            params["spellcheck"] = "true" if kwargs.get("spellcheck") else "false"
+
+        headers = {
+            "Accept": "application/json",
+            "X-Subscription-Token": self.api_key or "",
+        }
+        resp = await self._request("GET", PLACE_ENDPOINT, headers=headers, params=params)
+        data = resp.json()
+        items = data.get("results") or []
+
+        out: list[SearchResult] = []
+        for r in items[:count]:
+            if not isinstance(r, dict):
+                continue
+            address = (r.get("postal_address") or {}).get("displayAddress")
+            rating = r.get("rating") or {}
+            rating_text = ""
+            if isinstance(rating, dict) and rating.get("ratingValue"):
+                rating_text = f"{rating.get('ratingValue')} stars"
+                if rating.get("reviewCount"):
+                    rating_text += f" ({rating.get('reviewCount')} reviews)"
+            categories = ", ".join(str(c) for c in (r.get("categories") or []) if c)
+            snippet = " | ".join(s for s in (address, rating_text, categories) if s)
+            thumbnail = r.get("thumbnail") or {}
+            image = thumbnail.get("src") or thumbnail.get("original") if isinstance(thumbnail, dict) else None
+            out.append(
+                SearchResult(
+                    url=r.get("url") or r.get("provider_url") or "",
+                    title=r.get("title") or r.get("name") or "",
+                    snippet=snippet or r.get("description", "") or "",
+                    provider=self.name,
+                    image=image if isinstance(image, str) else None,
                     raw=r,
                 )
             )

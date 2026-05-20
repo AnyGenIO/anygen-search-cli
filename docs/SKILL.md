@@ -122,7 +122,7 @@ hsearch extract https://example.com/article
 
 ## Cost notes
 
-- Disk cache is on by default (`~/.cache/hsearch`, 1h TTL).
+- Disk cache is on by default (`~/.cache/hsearch`, adaptive TTL by mode).
 - Jina has a 1M-token free tier — prefer it for `extract`.
 - All providers' status: `hsearch providers`.
 ```

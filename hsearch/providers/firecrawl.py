@@ -64,6 +64,8 @@ class FirecrawlProvider(SearchProvider):
                 payload["timeout"] = int(kwargs["timeout"])
             except (TypeError, ValueError):
                 pass
+        if kwargs.get("ignore_invalid_urls"):
+            payload["ignoreInvalidURLs"] = True
         if kwargs.get("include_domains"):
             payload["includeDomains"] = kwargs["include_domains"]
         if kwargs.get("exclude_domains"):
@@ -85,7 +87,19 @@ class FirecrawlProvider(SearchProvider):
                 "country": kwargs.get("country") or "US",
                 "languages": [kwargs["lang"]],
             }
-        if formats or "location" in scrape_opts:
+        if kwargs.get("scrape_timeout") is not None:
+            try:
+                scrape_opts["timeout"] = int(kwargs["scrape_timeout"])
+            except (TypeError, ValueError):
+                pass
+        if kwargs.get("wait_for") is not None:
+            try:
+                scrape_opts["waitFor"] = int(kwargs["wait_for"])
+            except (TypeError, ValueError):
+                pass
+        if kwargs.get("mobile"):
+            scrape_opts["mobile"] = True
+        if formats or any(k in scrape_opts for k in ("location", "timeout", "waitFor", "mobile")):
             payload["scrapeOptions"] = scrape_opts
 
         resp = await self._request(

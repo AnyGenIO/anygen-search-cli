@@ -14,6 +14,7 @@ ENDPOINTS = {
     "videos": "https://google.serper.dev/videos",
     "shopping": "https://google.serper.dev/shopping",
     "places": "https://google.serper.dev/places",
+    "patents": "https://google.serper.dev/patents",
 }
 
 # Map search_kind -> serper sub-endpoint
@@ -28,6 +29,8 @@ KIND_MAP = {
     "videos": "videos",
     "shopping": "shopping",
     "places": "places",
+    "patent": "patents",
+    "patents": "patents",
 }
 
 
@@ -49,6 +52,13 @@ class SerperProvider(SearchProvider):
             payload["tbs"] = kwargs["tbs"]
         if kwargs.get("location"):
             payload["location"] = kwargs["location"]
+        if kwargs.get("page") is not None:
+            try:
+                payload["page"] = max(1, int(kwargs["page"]))
+            except (TypeError, ValueError):
+                pass
+        if kwargs.get("autocorrect") is not None:
+            payload["autocorrect"] = bool(kwargs["autocorrect"])
 
         headers = {
             "X-API-KEY": self.api_key or "",
@@ -133,6 +143,19 @@ class SerperProvider(SearchProvider):
                         snippet=r.get("snippet", "") or r.get("publicationInfo", "") or "",
                         provider=self.name,
                         published=r.get("year"),
+                        raw=r,
+                    )
+                )
+        elif endpoint_key == "patents":
+            items = data.get("organic") or data.get("patents") or []
+            for r in items[:count]:
+                out.append(
+                    SearchResult(
+                        url=r.get("link", "") or r.get("patentUrl", ""),
+                        title=r.get("title", "") or "",
+                        snippet=r.get("snippet", "") or r.get("assignee", "") or "",
+                        provider=self.name,
+                        published=r.get("publicationDate") or r.get("date"),
                         raw=r,
                     )
                 )

@@ -105,6 +105,9 @@ def search(
     ),
     lang: Optional[str] = typer.Option(None, "--lang", "-l", help="ISO 639-1 (en, zh, ja, ...)"),
     region: Optional[str] = typer.Option(None, "--region", "-r", help="ISO 3166 (US, CN, ...)"),
+    location: Optional[str] = typer.Option(
+        None, "--location", help="Provider location hint (e.g. San Francisco,CA,US)."
+    ),
     site: list[str] = typer.Option(None, "--site", help="Restrict to site(s); repeatable."),
     exclude: list[str] = typer.Option(None, "--exclude", help="Exclude site(s); repeatable."),
     extract_top: int = typer.Option(
@@ -131,6 +134,22 @@ def search(
     sources: Optional[str] = typer.Option(
         None, "--sources",
         help="Firecrawl multi-source (comma-sep): web,news,images.",
+    ),
+    goggles: list[str] = typer.Option(
+        None, "--goggles",
+        help="Brave: Goggle URL or inline definition; repeatable.",
+    ),
+    serper_type: Optional[str] = typer.Option(
+        None, "--serper-type",
+        help="Serper endpoint: search | news | images | videos | shopping | places | scholar | patents.",
+    ),
+    page: Optional[int] = typer.Option(
+        None, "--page",
+        help="Serper page number for paginated endpoints.",
+    ),
+    autocorrect: Optional[bool] = typer.Option(
+        None, "--autocorrect/--no-autocorrect",
+        help="Serper: enable or disable query autocorrection.",
     ),
     livecrawl: Optional[str] = typer.Option(
         None, "--livecrawl",
@@ -192,6 +211,14 @@ def search(
         False, "--include-usage",
         help="Tavily: include credit usage info in response meta.",
     ),
+    include_images: bool = typer.Option(
+        False, "--include-images",
+        help="Tavily: include query/result images.",
+    ),
+    include_image_descriptions: bool = typer.Option(
+        False, "--include-image-descriptions",
+        help="Tavily: include image descriptions with --include-images.",
+    ),
     answer_depth: Optional[str] = typer.Option(
         None, "--answer-depth",
         help="Tavily answer detail level: basic | advanced (requires --answer).",
@@ -203,6 +230,42 @@ def search(
     livecrawl_timeout: Optional[int] = typer.Option(
         None, "--livecrawl-timeout",
         help="Exa: livecrawl timeout in milliseconds (default 10000).",
+    ),
+    ignore_invalid_urls: bool = typer.Option(
+        False, "--ignore-invalid-urls",
+        help="Firecrawl: exclude URLs that are invalid for follow-on scrape endpoints.",
+    ),
+    firecrawl_scrape_timeout: Optional[int] = typer.Option(
+        None, "--firecrawl-scrape-timeout",
+        help="Firecrawl scrapeOptions.timeout in milliseconds.",
+    ),
+    firecrawl_wait_for: Optional[int] = typer.Option(
+        None, "--firecrawl-wait-for",
+        help="Firecrawl scrapeOptions.waitFor in milliseconds.",
+    ),
+    jina_engine: Optional[str] = typer.Option(
+        None, "--jina-engine",
+        help="Jina X-Engine header for Reader/Search.",
+    ),
+    jina_respond_with: Optional[str] = typer.Option(
+        None, "--jina-respond-with",
+        help="Jina X-Respond-With header, e.g. no-content, markdown, readerlm-v2.",
+    ),
+    jina_target_selector: Optional[str] = typer.Option(
+        None, "--jina-target-selector",
+        help="Jina X-Target-Selector CSS selector.",
+    ),
+    jina_wait_for: Optional[str] = typer.Option(
+        None, "--jina-wait-for",
+        help="Jina X-Wait-For-Selector CSS selector.",
+    ),
+    jina_remove_selector: Optional[str] = typer.Option(
+        None, "--jina-remove-selector",
+        help="Jina X-Remove-Selector CSS selector.",
+    ),
+    jina_generated_alt: bool = typer.Option(
+        False, "--jina-generated-alt",
+        help="Jina: caption images with generated alt text.",
     ),
 ) -> None:
     """Run a search across one, many, or all providers."""
@@ -232,6 +295,7 @@ def search(
                 time=time,
                 lang=lang,
                 region=region,
+                location=location,
                 sites=site,
                 exclude=exclude,
                 extract_top=extract_top,
@@ -239,6 +303,10 @@ def search(
                 answer=answer,
                 summary=summary,
                 sources=sources,
+                goggles=list(goggles) if goggles else None,
+                serper_type=serper_type,
+                page=page,
+                autocorrect=autocorrect,
                 livecrawl=livecrawl,
                 auto=auto,
                 raw=raw,
@@ -254,9 +322,20 @@ def search(
                 exa_type=exa_type,
                 include_favicon=include_favicon,
                 include_usage=include_usage,
+                include_images=include_images,
+                include_image_descriptions=include_image_descriptions,
                 answer_depth=answer_depth,
                 moderation=moderation,
                 livecrawl_timeout=livecrawl_timeout,
+                ignore_invalid_urls=ignore_invalid_urls,
+                firecrawl_scrape_timeout=firecrawl_scrape_timeout,
+                firecrawl_wait_for=firecrawl_wait_for,
+                jina_engine=jina_engine,
+                jina_respond_with=jina_respond_with,
+                jina_target_selector=jina_target_selector,
+                jina_wait_for=jina_wait_for,
+                jina_remove_selector=jina_remove_selector,
+                jina_generated_alt=jina_generated_alt,
             )
         )
     except ValueError as e:
@@ -374,6 +453,23 @@ def schema_cmd() -> None:
     from hsearch.schema import render_schema
 
     sys.stdout.write(render_schema() + "\n")
+
+
+@app.command("mcp")
+def mcp_cmd() -> None:
+    """Start hsearch as a stdio MCP server."""
+    try:
+        from hsearch.mcp_server import run_stdio
+
+        run_stdio()
+    except RuntimeError as e:
+        err_console.print(f"[red]MCP support is not installed.[/] {e}")
+        raise typer.Exit(1)
+    except ImportError:
+        err_console.print(
+            '[red]MCP support is not installed.[/] Install MCP support with: pip install -e ".[mcp]"'
+        )
+        raise typer.Exit(1)
 
 
 @cache_app.command("clear")

@@ -44,7 +44,7 @@ class ResultCache:
         ttl: int | None = None,
     ) -> None:
         key = _make_key(provider, query, params)
-        self._cache.set(key, value, expire=ttl or cache_ttl())
+        self._cache.set(key, value, expire=ttl if ttl is not None else cache_ttl())
 
     def clear(self) -> int:
         n = len(self._cache)

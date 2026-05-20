@@ -98,6 +98,14 @@ class TavilyProvider(SearchProvider):
         for r in (data.get("results") or [])[:count]:
             raw_content = r.get("raw_content")
             favicon = r.get("favicon") if isinstance(r.get("favicon"), str) else None
+            image = None
+            images = r.get("images")
+            if isinstance(images, list) and images:
+                first = images[0]
+                if isinstance(first, dict):
+                    image = first.get("url")
+                elif isinstance(first, str):
+                    image = first
             out.append(
                 SearchResult(
                     url=r.get("url", ""),
@@ -108,6 +116,7 @@ class TavilyProvider(SearchProvider):
                     published=r.get("published_date"),
                     content=raw_content if isinstance(raw_content, str) else None,
                     favicon=favicon,
+                    image=image if isinstance(image, str) else None,
                     raw=r,
                 )
             )
