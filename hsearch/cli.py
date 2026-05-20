@@ -1,4 +1,4 @@
-"""hsearch — typer-based CLI."""
+"""hsearch — typer-based CLI (thin wrapper over engine.py)."""
 from __future__ import annotations
 
 import asyncio
@@ -21,18 +21,13 @@ from hsearch.config import (
     get_key,
     timeout_seconds,
 )
-from hsearch.dedup import dedup_merge
+from hsearch.engine import search as engine_search, SearchResponse
 from hsearch.extract import EXTRACT_PROVIDERS, extract_many
-from hsearch.filters import Filters, apply as apply_filters
+from hsearch.filters import Filters
 from hsearch.models import SearchResult
 from hsearch.output import emit
-from hsearch.providers import (
-    ProviderAuthError,
-    ProviderHTTPError,
-    get_provider,
-    list_providers,
-)
-from hsearch.router import ALL_MODES, providers_for_mode
+from hsearch.providers import list_providers
+from hsearch.router import ALL_MODES
 
 app = typer.Typer(
     add_completion=False,
@@ -50,94 +45,13 @@ err_console = Console(stderr=True)
 # --- helpers -----------------------------------------------------------------
 
 
-async def _run_one(
-    provider_name: str,
-    query: str,
-    count: int,
-    use_cache: bool,
-    cache: ResultCache | None,
-    extra: dict,
-    filters: Filters | None = None,
-    cache_ttl_override: int | None = None,
-) -> tuple[str, list[SearchResult] | None, str | None, dict]:
-    # Translate filters to per-provider kwargs + possibly rewrite query.
-    if filters is not None:
-        eff_query, eff_extra = apply_filters(provider_name, query, filters, extra)
-    else:
-        eff_query, eff_extra = query, dict(extra)
-    extras_out: dict = {}
-    # Cache key params should not include private flags like _retries.
-    cache_params = {k: v for k, v in {"count": count, **eff_extra}.items() if not str(k).startswith("_")}
-    if use_cache and cache is not None:
-        hit = cache.get(provider_name, eff_query, cache_params)
-        if hit is not None:
-            results = [SearchResult(**r) for r in hit]
-            extras_out["cached"] = True
-            return provider_name, results, None, extras_out
-    try:
-        provider = get_provider(provider_name)
-    except KeyError as e:
-        return provider_name, None, str(e), extras_out
-    try:
-        async with provider:
-            results = await provider.search(eff_query, count=count, **eff_extra)
-            # Capture provider-specific extras.
-            ans = getattr(provider, "_last_answer", None)
-            if ans:
-                extras_out["answer"] = ans
-            usage = getattr(provider, "_last_usage", None)
-            if isinstance(usage, dict) and usage:
-                extras_out["usage"] = usage
-    except ProviderAuthError as e:
-        return provider_name, None, f"auth: {e}", extras_out
-    except ProviderHTTPError as e:
-        return provider_name, None, f"http: {e}", extras_out
-    except Exception as e:  # noqa: BLE001
-        return provider_name, None, f"{type(e).__name__}: {e}", extras_out
-
-    if use_cache and cache is not None:
-        cache.set(
-            provider_name,
-            eff_query,
-            cache_params,
-            [r.to_dict() | {"raw": {}} for r in results],
-            ttl=cache_ttl_override,
-        )
-    extras_out["cached"] = False
-    return provider_name, results, None, extras_out
-
-
-async def _run_many(
-    providers: list[str],
-    query: str,
-    count: int,
-    use_cache: bool,
-    extra: dict,
-    filters: Filters | None = None,
-    cache_ttl_override: int | None = None,
-) -> tuple[list[SearchResult], dict[str, str], dict[str, dict]]:
-    cache: ResultCache | None = ResultCache() if use_cache else None
-    try:
-        coros = [
-            _run_one(p, query, count, use_cache, cache, extra, filters, cache_ttl_override)
-            for p in providers
-        ]
-        outcomes = await asyncio.gather(*coros)
-    finally:
-        if cache is not None:
-            cache.close()
-
-    merged: list[SearchResult] = []
-    errors: dict[str, str] = {}
-    extras_by_provider: dict[str, dict] = {}
-    for name, results, err, extras in outcomes:
-        if extras:
-            extras_by_provider[name] = extras
-        if err is not None or results is None:
-            errors[name] = err or "no results"
-            continue
-        merged.extend(results)
-    return merged, errors, extras_by_provider
+def _cli_option_present(long_name: str, short_name: str | None = None) -> bool:
+    for arg in sys.argv[1:]:
+        if arg == long_name or arg.startswith(f"{long_name}="):
+            return True
+        if short_name and (arg == short_name or arg.startswith(short_name)):
+            return True
+    return False
 
 
 def _print_errors(errors: dict[str, str]) -> None:
@@ -145,20 +59,6 @@ def _print_errors(errors: dict[str, str]) -> None:
         return
     for name, msg in errors.items():
         err_console.print(f"[yellow]![/] [bold]{name}[/]: {msg}")
-
-
-def _cli_option_present(long_name: str, short_name: str | None = None) -> bool:
-    """Return True when an option was explicitly supplied in argv.
-
-    Typer exposes only parsed values to command functions, so presets need a
-    small argv check to avoid overriding user-provided values.
-    """
-    for arg in sys.argv[1:]:
-        if arg == long_name or arg.startswith(f"{long_name}="):
-            return True
-        if short_name and (arg == short_name or arg.startswith(short_name)):
-            return True
-    return False
 
 
 # --- commands ----------------------------------------------------------------
@@ -220,7 +120,6 @@ def search(
         "--agent",
         help="Agent-friendly preset: --format json --top 5 unless explicitly overridden.",
     ),
-    # ---- v0.2 new options ---------------------------------------------------
     answer: bool = typer.Option(
         False, "--answer", "-a",
         help="Ask Tavily for a synthesized answer (printed at top).",
@@ -273,7 +172,6 @@ def search(
         None, "--context-threshold",
         help="Brave LLM Context threshold: strict | balanced | lenient | disabled.",
     ),
-    # ---- 2026-04 new options (provider doc updates) -------------------------
     exact: bool = typer.Option(
         False, "--exact",
         help="Tavily exact_match=True — quoted phrases must appear verbatim (no synonyms).",
@@ -296,15 +194,6 @@ def search(
     ),
 ) -> None:
     """Run a search across one, many, or all providers."""
-    mode_key = (mode or "").lower() or None
-    try:
-        filters = Filters.from_cli(
-            time=time, lang=lang, region=region, sites=site, exclude=exclude
-        )
-    except ValueError as e:
-        err_console.print(f"[red]Invalid filter:[/] {e}")
-        raise typer.Exit(2)
-
     if agent:
         if fmt is None:
             fmt = "json"
@@ -318,170 +207,74 @@ def search(
         )
         raise typer.Exit(2)
 
-    if all_providers:
-        providers = configured_providers()
-    elif provider:
-        providers = list(provider)
-    else:
-        providers = providers_for_mode(mode_key)
-
-    if not providers:
-        err_console.print(
-            "[red]No providers configured.[/] Set API keys in $HERMES_HOME/.env, ~/.hermes/.env, or project .env"
+    try:
+        resp: SearchResponse = asyncio.run(
+            engine_search(
+                query,
+                providers=list(provider) if provider else None,
+                mode=mode,
+                all_providers=all_providers,
+                top=top,
+                no_cache=no_cache,
+                cache_ttl=cache_ttl_opt,
+                time=time,
+                lang=lang,
+                region=region,
+                sites=site,
+                exclude=exclude,
+                extract_top=extract_top,
+                extract_provider=extract_provider,
+                answer=answer,
+                summary=summary,
+                sources=sources,
+                livecrawl=livecrawl,
+                auto=auto,
+                raw=raw,
+                retries=retries,
+                days=days,
+                chunks_per_source=chunks_per_source,
+                additional_queries=list(additional_query) if additional_query else None,
+                max_age_hours=max_age_hours,
+                highlights=highlights,
+                context_threshold=context_threshold,
+                exact=exact,
+                depth=depth,
+                exa_type=exa_type,
+                include_favicon=include_favicon,
+                include_usage=include_usage,
+            )
         )
+    except ValueError as e:
+        err_console.print(f"[red]Invalid filter:[/] {e}")
         raise typer.Exit(2)
 
-    extra: dict = {}
-    if mode_key == "news":
-        extra["topic"] = "news"
-        extra["freshness"] = "pw"
-    elif mode_key == "academic":
-        extra["category"] = "research paper"
-    elif mode_key == "realtime":
-        extra["freshness"] = "pd"
-    elif mode_key == "shopping":
-        extra["search_type"] = "shopping"
-    elif mode_key == "video":
-        extra["search_type"] = "videos"
-    elif mode_key == "images":
-        extra["search_type"] = "images"
-    elif mode_key == "places":
-        extra["search_type"] = "places"
-    elif mode_key == "answer":
-        # Auto-enable answer panel.
-        answer = True
-    elif mode_key == "deep":
-        extra["type"] = "deep-reasoning"
-        extra["summary"] = True
-    elif mode_key == "fast":
-        # Latency-first: Exa instant + Tavily ultra-fast. Both providers will
-        # ignore params they don't understand thanks to per-provider kwarg gates.
-        extra["type"] = "instant"  # Exa
-        extra["search_depth"] = "ultra-fast"  # Tavily
-    elif mode_key == "recall":
-        # Recall-first preset: fan out broadly and ask providers for richer
-        # candidate snippets/content. This costs more than the default path.
-        extra["type"] = "deep-reasoning"  # Exa
-        extra["highlights"] = True  # Exa
-        extra["summary"] = True  # Exa / Firecrawl
-        extra["search_depth"] = "advanced"  # Tavily
-        extra["chunks_per_source"] = 3  # Tavily
-        extra["auto_parameters"] = True  # Tavily
-        extra["search_kind"] = "context"  # Brave LLM Context
-        extra["context_threshold_mode"] = "lenient"  # Brave LLM Context
-        extra["sources"] = ["web", "news"]  # Firecrawl
-        extra["with_content"] = True  # Firecrawl / Jina
-
-    # ---- v0.2 flags -> provider kwargs -----------------------------------
-    if answer:
-        # Tavily understands include_answer; other providers ignore it.
-        extra["include_answer"] = True
-    if summary:
-        extra["summary"] = True
-    if sources:
-        extra["sources"] = [s.strip() for s in sources.split(",") if s.strip()]
-    if livecrawl:
-        extra["livecrawl"] = livecrawl
-    if auto:
-        extra["auto_parameters"] = True
-    if raw:
-        extra["include_raw_content"] = "markdown"
-    if days is not None:
-        extra["days"] = days
-    if chunks_per_source is not None:
-        extra["chunks_per_source"] = chunks_per_source
-    if additional_query:
-        extra["additional_queries"] = list(additional_query)
-    if max_age_hours is not None:
-        extra["max_age_hours"] = max_age_hours
-    if highlights:
-        extra["highlights"] = True
-    if context_threshold:
-        extra["context_threshold_mode"] = context_threshold
-    if retries is not None:
-        extra["_retries"] = retries
-    # ---- 2026-04 new flag wiring ----------------------------------------
-    if exact:
-        extra["exact_match"] = True
-    if depth:
-        extra["search_depth"] = depth  # explicit user choice wins over mode preset
-    if exa_type:
-        extra["type"] = exa_type  # explicit user choice wins over mode preset
-    if include_favicon:
-        extra["include_favicon"] = True
-    if include_usage:
-        extra["include_usage"] = True
-
-    results, errors, extras_by_provider = asyncio.run(
-        _run_many(
-            providers, query, top, use_cache=not no_cache, extra=extra,
-            filters=filters, cache_ttl_override=cache_ttl_opt,
-        )
-    )
-
-    merged = dedup_merge(results)
-    limit = max(top, 1) if not all_providers else top * len(providers)
-    merged = merged[:limit]
+    merged = resp.results
+    mode_key = (mode or "").lower() or None
 
     if fmt is None:
         fmt = "table" if sys.stdout.isatty() else "json"
 
-    if extract_top and extract_top > 0 and merged:
-        urls = [r.url for r in merged[:extract_top] if r.url]
-        outcomes = asyncio.run(extract_many(urls, provider=extract_provider, concurrency=4))
-        url_to_content = {u: c for (u, c, _e) in outcomes if c}
-        for r in merged:
-            if r.url in url_to_content:
-                r.content = url_to_content[r.url]
-
-    # ---- Build meta for structured output --------------------------------
-    tavily_answer = (extras_by_provider.get("tavily") or {}).get("answer")
-    cache_status = {
-        p: extras_by_provider.get(p, {}).get("cached")
-        for p in providers
-        if "cached" in extras_by_provider.get(p, {})
-    }
-    meta: dict = {
-        "query": query,
-        "mode": mode_key or "default",
-        "providers_queried": providers,
-        "total_results": len(merged),
-        "cached": cache_status,
-    }
-    if (answer or mode_key == "answer") and tavily_answer:
-        meta["answer"] = tavily_answer
-    # Surface per-provider usage when --include-usage was set.
-    usage_by_provider = {
-        p: extras_by_provider[p]["usage"]
-        for p in providers
-        if isinstance(extras_by_provider.get(p, {}).get("usage"), dict)
-    }
-    if usage_by_provider:
-        meta["usage"] = usage_by_provider
-    if extract_top and extract_top > 0:
-        meta["extract_top"] = extract_top
-        meta["extract_provider"] = extract_provider
+    meta = resp.meta
     if agent:
         meta["agent_preset"] = True
 
-    # ---- Top-of-output answer panel (human formats only) -----------------
-    if (answer or mode_key == "answer") and tavily_answer and fmt in ("table", "markdown", "md"):
+    if (answer or mode_key == "answer") and resp.answer and fmt in ("table", "markdown", "md"):
         if fmt == "table":
             console.print(
                 Panel(
-                    tavily_answer,
+                    resp.answer,
                     title="[bold green]Tavily Answer[/]",
                     border_style="green",
                     expand=True,
                 )
             )
         else:
-            sys.stdout.write(f"## Answer\n\n{tavily_answer}\n\n")
+            sys.stdout.write(f"## Answer\n\n{resp.answer}\n\n")
 
-    emit(merged, fmt, console=console, meta=meta, errors=errors)
+    emit(merged, fmt, console=console, meta=meta, errors=resp.errors)
     if fmt != "json":
-        _print_errors(errors)
-    if not merged and errors:
+        _print_errors(resp.errors)
+    if not merged and resp.errors:
         raise typer.Exit(1)
 
 
@@ -515,7 +308,6 @@ def extract(
             out["errors"] = errs
         sys.stdout.write(json.dumps(out, ensure_ascii=False, indent=2) + "\n")
         return
-    # markdown
     for url, content, err in outcomes:
         console.rule(f"[bold]{url}[/]")
         if err:
@@ -534,7 +326,7 @@ def providers_cmd() -> None:
     for name in list_providers():
         env = PROVIDER_ENV[name]
         ok = bool(get_key(name))
-        status = "[green]✅ configured[/]" if ok else "[red]❌ missing[/]"
+        status = "[green]configured[/]" if ok else "[red]missing[/]"
         table.add_row(name, env, status)
     console.print(table)
 
@@ -556,6 +348,17 @@ def config() -> None:
     table.add_row("cache_size_bytes", str(s["size_bytes"]))
     table.add_row("configured_providers", ", ".join(configured_providers()) or "(none)")
     console.print(table)
+
+
+@app.command("schema")
+def schema_cmd() -> None:
+    """Output tool schema as JSON for LLM self-discovery.
+
+    LLM agents can run ``hsearch schema`` to learn how to call this CLI.
+    """
+    from hsearch.schema import render_schema
+
+    sys.stdout.write(render_schema() + "\n")
 
 
 @cache_app.command("clear")
