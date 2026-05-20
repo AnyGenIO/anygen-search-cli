@@ -191,7 +191,9 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     elif mode_key == "places":
         extra["search_type"] = "places"
     elif mode_key == "answer":
-        kwargs.setdefault("answer", True)
+        # Force-enable answer for --mode answer; setdefault was a no-op because
+        # the CLI passes answer=False explicitly when --answer flag is absent.
+        kwargs["answer"] = True
     elif mode_key == "deep":
         extra["type"] = "deep-reasoning"
         extra["summary"] = True

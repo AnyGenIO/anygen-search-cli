@@ -86,7 +86,13 @@ async def test_firecrawl_timeout_param():
 
 @pytest.mark.asyncio
 async def test_firecrawl_highlights_format():
-    """Firecrawl scrapeOptions.formats should include 'highlights' string."""
+    """Firecrawl v2 rejects 'highlights' scrape format (verified live 2026-05-20).
+
+    The format was documented in older Firecrawl docs but the v2 API only
+    accepts: markdown|html|rawHtml|links|images|summary|json|question|query|screenshot.
+    hsearch now silently drops `highlights=True` for Firecrawl so `--mode recall`
+    (which sets highlights for Exa) doesn't 400 the Firecrawl call.
+    """
     captured: dict = {}
 
     def _h(req: httpx.Request) -> httpx.Response:
@@ -99,7 +105,9 @@ async def test_firecrawl_highlights_format():
         mock.post("https://api.firecrawl.dev/v2/search").mock(side_effect=_h)
         async with FirecrawlProvider() as p:
             await p.search("q", count=1, highlights=True)
-    assert "highlights" in captured["body"]["scrapeOptions"]["formats"]
+    # highlights must NOT leak into the wire payload — Firecrawl 400s on it.
+    formats = (captured["body"].get("scrapeOptions") or {}).get("formats", [])
+    assert "highlights" not in formats
 
 
 # ---------- Exa --------------------------------------------------------------

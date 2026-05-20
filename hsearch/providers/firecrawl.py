@@ -78,8 +78,10 @@ class FirecrawlProvider(SearchProvider):
             formats.append("markdown")
         if kwargs.get("summary"):
             formats.append("summary")
-        if kwargs.get("highlights"):
-            formats.append("highlights")
+        # NOTE: "highlights" is NOT a valid Firecrawl v2 scrape format
+        # (valid: markdown|html|rawHtml|links|images|summary|json|question|query|screenshot).
+        # Verified 2026-05-20: passing "highlights" yields 400 invalid_union.
+        # `--mode recall` sets highlights=True for Exa; we silently drop it for Firecrawl.
         if formats:
             scrape_opts["formats"] = formats
         if kwargs.get("lang"):
