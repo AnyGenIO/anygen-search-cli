@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.2.3-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -35,44 +35,93 @@ or script is wasteful.**
 ## Install
 
 ```bash
+pip install git+https://github.com/AnyGenIO/anygen-search-cli.git
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/AnyGenIO/anygen-search-cli.git
 cd anygen-search-cli
-python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-You now have a `hsearch` command on your PATH (and `python -m hsearch` works too).
-
-> Requires Python **3.11+**. Dependencies: `httpx`, `typer`, `rich`,
+> Requires Python **3.9+**. Dependencies: `httpx`, `typer`, `rich`,
 > `python-dotenv`, `diskcache`.
 
-### Configure provider keys
+### Configure API keys
 
-Copy [`.env.example`](.env.example) to your active Hermes profile env
-(`$HERMES_HOME/.env`), global `~/.hermes/.env`, or project-local `./.env`,
-then fill in **at least one** key:
+Set at least one provider's API key as an environment variable:
 
 ```bash
-cp .env.example "${HERMES_HOME:-$HOME/.hermes}/.env"
-$EDITOR "${HERMES_HOME:-$HOME/.hermes}/.env"
+# Add to ~/.bashrc, ~/.zshrc, or equivalent
+export TAVILY_API_KEY="tvly-xxx"
+export BRAVE_API_KEY="BSAxxxxx"
+export SERPER_API_KEY="xxx"
+export EXA_API_KEY="xxx"
+export FIRECRAWL_API_KEY="fc-xxx"
+export JINA_API_KEY="jina_xxx"
 ```
 
-Then verify:
+Alternatively, put them in a `.env` file (project-local `./. env`, or `~/.hermes/.env`).
+
+Verify:
 
 ```bash
-$ hsearch providers
-                  hsearch providers
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
-┃ Provider   ┃ Env var            ┃ Status        ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
-│ brave      │ BRAVE_API_KEY      │ ✅ configured │
-│ serper     │ SERPER_API_KEY     │ ✅ configured │
-│ exa        │ EXA_API_KEY        │ ✅ configured │
-│ tavily     │ TAVILY_API_KEY     │ ✅ configured │
-│ firecrawl  │ FIRECRAWL_API_KEY  │ ✅ configured │
-│ jina       │ JINA_API_KEY       │ ✅ configured │
-└────────────┴────────────────────┴───────────────┘
+python3 -m hsearch providers
 ```
+
+---
+
+## LLM / Agent Integration
+
+`hsearch` is designed to be called by LLM agents via shell. Two features make this work:
+
+### 1. `--agent` flag
+
+Always outputs structured JSON with sensible defaults (`--format json --top 5`):
+
+```bash
+python3 -m hsearch search "your query" --agent
+```
+
+### 2. `hsearch schema` — LLM self-discovery
+
+```bash
+python3 -m hsearch schema
+```
+
+Outputs a complete JSON tool definition (parameters, output schema, examples, tips). An LLM agent can run this once to learn how to use `hsearch` — no manual docs needed.
+
+### 3. Python SDK
+
+```python
+from hsearch import search_sync, SearchResult
+
+resp = search_sync("Python tutorial", mode="general", top=5)
+for r in resp.results:
+    print(r.title, r.url)
+
+# Or with explicit API keys (no env vars needed)
+resp = search_sync("query", api_keys={"tavily": "tvly-xxx"})
+```
+
+Async:
+
+```python
+from hsearch import search
+resp = await search("query", providers=["tavily", "brave"], top=5)
+```
+
+### Add to Claude Code / Cursor / AI IDE
+
+Add one line to your `CLAUDE.md` or `.cursorrules`:
+
+```
+You have access to `hsearch` for web search. Run `python3 -m hsearch schema` to learn usage.
+```
+
+That's it — the LLM reads the schema and figures out the rest.
 
 ---
 
