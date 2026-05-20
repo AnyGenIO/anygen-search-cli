@@ -197,6 +197,10 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     elif mode_key == "fast":
         extra["type"] = "instant"
         extra["search_depth"] = "ultra-fast"
+    elif mode_key == "finance":
+        extra["topic"] = "finance"
+        extra["search_depth"] = "advanced"
+        extra["include_answer"] = "advanced"
     elif mode_key == "recall":
         extra["type"] = "deep-reasoning"
         extra["highlights"] = True
@@ -208,9 +212,16 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["context_threshold_mode"] = "lenient"
         extra["sources"] = ["web", "news"]
         extra["with_content"] = True
+        extra["spellcheck"] = True
+        extra["extra_snippets"] = True
+        extra["moderation"] = True
 
     if kwargs.get("answer"):
-        extra["include_answer"] = True
+        answer_depth = kwargs.get("answer_depth")
+        if answer_depth in ("basic", "advanced"):
+            extra["include_answer"] = answer_depth
+        else:
+            extra["include_answer"] = True
     if kwargs.get("summary"):
         extra["summary"] = True
     if kwargs.get("sources"):
@@ -246,6 +257,10 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["include_favicon"] = True
     if kwargs.get("include_usage"):
         extra["include_usage"] = True
+    if kwargs.get("moderation"):
+        extra["moderation"] = True
+    if kwargs.get("livecrawl_timeout") is not None:
+        extra["livecrawl_timeout"] = kwargs["livecrawl_timeout"]
 
     return extra
 

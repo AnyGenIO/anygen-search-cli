@@ -332,7 +332,7 @@ def test_cli_mode_recall_sets_high_recall_params():
     assert tavily_body["chunks_per_source"] == 3
     assert tavily_body["auto_parameters"] is True
     assert brave_params["context_threshold_mode"] == "lenient"
-    assert firecrawl_body["sources"] == ["web", "news"]
-    assert {"type": "markdown"} in firecrawl_body["scrapeOptions"]["formats"]
-    assert {"type": "summary"} in firecrawl_body["scrapeOptions"]["formats"]
+    assert firecrawl_body["sources"] == [{"type": "web"}, {"type": "news"}]
+    assert "markdown" in firecrawl_body["scrapeOptions"]["formats"]
+    assert "summary" in firecrawl_body["scrapeOptions"]["formats"]
     assert "x-respond-with" not in jina_headers

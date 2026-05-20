@@ -126,6 +126,23 @@ SEARCH_SCHEMA: dict[str, Any] = {
                         "description": "Disable result cache.",
                         "cli_flag": "--no-cache",
                     },
+                    "answer_depth": {
+                        "type": "string",
+                        "enum": ["basic", "advanced"],
+                        "description": "Tavily answer detail level (requires --answer).",
+                        "cli_flag": "--answer-depth",
+                    },
+                    "moderation": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Exa: enable content moderation to filter unsafe results.",
+                        "cli_flag": "--moderation",
+                    },
+                    "livecrawl_timeout": {
+                        "type": "integer",
+                        "description": "Exa: livecrawl timeout in milliseconds.",
+                        "cli_flag": "--livecrawl-timeout",
+                    },
                 },
             },
             "output_schema": {
@@ -200,6 +217,14 @@ SEARCH_SCHEMA: dict[str, Any] = {
                     "description": "Site-restricted search",
                     "command": 'hsearch search "deployment guide" --site docs.aws.amazon.com --agent',
                 },
+                {
+                    "description": "Finance search with advanced answer",
+                    "command": 'hsearch search "AAPL earnings Q1 2026" --mode finance --agent',
+                },
+                {
+                    "description": "High-recall multi-provider search",
+                    "command": 'hsearch search "new battery technology 2026" --mode recall --agent',
+                },
             ],
         },
         {
@@ -263,11 +288,12 @@ SEARCH_SCHEMA: dict[str, Any] = {
     },
     "tips_for_llm": [
         "Always use --agent flag for structured JSON output with sensible defaults.",
-        "Use --mode to pick the right provider combo: 'news' for current events, 'academic' for papers, 'fast' for speed.",
-        "Use --answer to get a synthesized answer from Tavily (good for factual questions).",
+        "Use --mode to pick the right provider combo: 'news' for current events, 'academic' for papers, 'fast' for speed, 'finance' for financial data, 'recall' for maximum coverage.",
+        "Use --answer to get a synthesized answer from Tavily (good for factual questions). Add --answer-depth advanced for more detail.",
         "Use --extract-top N to get full page content for the top N results.",
         "Errors are in stderr, structured JSON is in stdout — parse stdout only.",
         "Use 'hsearch schema' to get this schema programmatically.",
+        "Use --moderation with Exa to filter unsafe content.",
     ],
 }
 

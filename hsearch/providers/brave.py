@@ -51,13 +51,15 @@ class BraveProvider(SearchProvider):
             ("units", "units"),
             ("offset", "offset"),
             ("safesearch", "safesearch"),
+            ("ui_lang", "ui_lang"),
         ):
             v = kwargs.get(src)
             if v is not None and v != "":
                 params[dst] = v
         if kwargs.get("extra_snippets"):
-            # Brave wants the literal lowercase string "true"/"false"
             params["extra_snippets"] = "true"
+        if kwargs.get("spellcheck"):
+            params["spellcheck"] = "true"
 
         headers = {
             "Accept": "application/json",

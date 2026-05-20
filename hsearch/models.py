@@ -19,6 +19,8 @@ class SearchResult:
     content: str | None = None  # populated by --extract-top pipeline or --raw
     summary: str | None = None  # LLM-generated summary (e.g. Exa contents.summary)
     favicon: str | None = None  # populated by Tavily include_favicon=True
+    author: str | None = None
+    image: str | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:

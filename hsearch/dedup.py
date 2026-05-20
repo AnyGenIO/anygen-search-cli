@@ -55,7 +55,6 @@ def dedup_merge(results: list[SearchResult]) -> list[SearchResult]:
         if not key:
             continue
         if key not in bucket:
-            # Clone-light: keep the first hit but ensure sources is set.
             r.sources = list(dict.fromkeys(r.sources or [r.provider]))
             bucket[key] = r
             order.append(key)
@@ -64,17 +63,32 @@ def dedup_merge(results: list[SearchResult]) -> list[SearchResult]:
             for src in r.sources or [r.provider]:
                 if src and src not in existing.sources:
                     existing.sources.append(src)
-            # Prefer the longer snippet/title when merging.
             if len(r.snippet) > len(existing.snippet):
                 existing.snippet = r.snippet
             if r.title and (not existing.title or len(r.title) > len(existing.title)):
                 existing.title = r.title
             if r.published and not existing.published:
                 existing.published = r.published
+            if r.content and (not existing.content or len(r.content) > len(existing.content)):
+                existing.content = r.content
+            if r.summary and not existing.summary:
+                existing.summary = r.summary
+            if r.favicon and not existing.favicon:
+                existing.favicon = r.favicon
+            if r.author and not existing.author:
+                existing.author = r.author
+            if r.image and not existing.image:
+                existing.image = r.image
 
     merged = [bucket[k] for k in order]
-    # Score = base score + 1 per additional source. Sort stable by score desc.
     for r in merged:
-        r.score = (r.score or 0.0) + max(0, len(r.sources) - 1)
+        base = r.score or 0.0
+        source_boost = max(0, len(r.sources) - 1)
+        richness = sum([
+            0.3 if r.content else 0,
+            0.2 if r.summary else 0,
+            0.1 if r.published else 0,
+        ])
+        r.score = base + source_boost + richness
     merged.sort(key=lambda x: (-(x.score or 0.0), -len(x.sources)))
     return merged

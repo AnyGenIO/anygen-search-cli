@@ -11,6 +11,7 @@ ENDPOINT = "https://api.tavily.com/search"
 # Tavily search_depth options as of 2026-04 (added: fast, ultra-fast).
 # basic / advanced were the original two; fast / ultra-fast trade relevance for latency.
 _VALID_DEPTHS = {"basic", "advanced", "fast", "ultra-fast"}
+_VALID_TOPICS = {"general", "news", "finance"}
 
 
 class TavilyProvider(SearchProvider):
@@ -26,11 +27,14 @@ class TavilyProvider(SearchProvider):
         depth = kwargs.get("search_depth", "basic")
         if depth not in _VALID_DEPTHS:
             depth = "basic"
+        topic = kwargs.get("topic", "general")
+        if topic not in _VALID_TOPICS:
+            topic = "general"
         payload: dict[str, Any] = {
             "query": query,
             "max_results": max(1, min(count, 20)),
             "search_depth": depth,
-            "topic": kwargs.get("topic", "general"),
+            "topic": topic,
         }
         # ---- v0.2 new params ----------------------------------------------
         if "auto_parameters" in kwargs and kwargs["auto_parameters"] is not None:
@@ -59,8 +63,12 @@ class TavilyProvider(SearchProvider):
         if kwargs.get("include_usage"):
             payload["include_usage"] = True
         # ---- existing optional params -------------------------------------
-        if kwargs.get("include_answer"):
-            payload["include_answer"] = kwargs["include_answer"]
+        inc_answer = kwargs.get("include_answer")
+        if inc_answer:
+            if isinstance(inc_answer, str) and inc_answer in ("basic", "advanced"):
+                payload["include_answer"] = inc_answer
+            else:
+                payload["include_answer"] = True
         if kwargs.get("time_range"):
             payload["time_range"] = kwargs["time_range"]
         if kwargs.get("start_date"):

@@ -36,7 +36,7 @@ class FirecrawlProvider(SearchProvider):
         payload: dict[str, Any] = {
             "query": query,
             "limit": max(1, min(count, 100)),
-            "sources": sources,
+            "sources": [{"type": s} for s in sources],
         }
         if kwargs.get("categories"):
             cats = kwargs["categories"]
@@ -57,26 +57,36 @@ class FirecrawlProvider(SearchProvider):
             payload["country"] = kwargs["country"]
         if kwargs.get("location"):
             payload["location"] = kwargs["location"]
-        if kwargs.get("lang"):
-            payload["lang"] = kwargs["lang"]
         if kwargs.get("tbs"):
             payload["tbs"] = kwargs["tbs"]
+        if kwargs.get("timeout"):
+            try:
+                payload["timeout"] = int(kwargs["timeout"])
+            except (TypeError, ValueError):
+                pass
         if kwargs.get("include_domains"):
             payload["includeDomains"] = kwargs["include_domains"]
         if kwargs.get("exclude_domains"):
             payload["excludeDomains"] = kwargs["exclude_domains"]
 
         # ---- scrapeOptions -------------------------------------------------
-        # Build formats based on with_content / summary flags. Both new
-        # `[{"type": "markdown"}]` and `[{"type": "summary"}]` shapes are
-        # supported by the v2 API.
-        formats: list[dict[str, Any]] = []
+        scrape_opts: dict[str, Any] = {"onlyMainContent": True}
+        formats: list[str] = []
         if kwargs.get("with_content"):
-            formats.append({"type": "markdown"})
+            formats.append("markdown")
         if kwargs.get("summary"):
-            formats.append({"type": "summary"})
+            formats.append("summary")
+        if kwargs.get("highlights"):
+            formats.append("highlights")
         if formats:
-            payload["scrapeOptions"] = {"formats": formats, "onlyMainContent": True}
+            scrape_opts["formats"] = formats
+        if kwargs.get("lang"):
+            scrape_opts["location"] = {
+                "country": kwargs.get("country") or "US",
+                "languages": [kwargs["lang"]],
+            }
+        if formats or "location" in scrape_opts:
+            payload["scrapeOptions"] = scrape_opts
 
         resp = await self._request(
             "POST", SEARCH_ENDPOINT, headers=self._headers(), json=payload

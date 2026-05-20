@@ -26,10 +26,8 @@ class JinaProvider(SearchProvider):
         return h
 
     async def _search(self, query: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
-        # POST form to s.jina.ai with `q` body for arbitrary queries (avoids URL-encoding issues).
         headers = self._headers(json_resp=True, no_content=not kwargs.get("with_content", False))
         headers["Content-Type"] = "application/json"
-        # ---- v0.2 new pass-through headers --------------------------------
         if kwargs.get("site"):
             headers["X-Site"] = str(kwargs["site"])
         if kwargs.get("engine"):
@@ -38,6 +36,20 @@ class JinaProvider(SearchProvider):
             headers["X-Locale"] = str(kwargs["locale"])
         if kwargs.get("no_cache"):
             headers["X-No-Cache"] = "true"
+        if kwargs.get("jina_timeout"):
+            headers["X-Timeout"] = str(int(kwargs["jina_timeout"]))
+        if kwargs.get("max_tokens"):
+            headers["X-Max-Tokens"] = str(int(kwargs["max_tokens"]))
+        if kwargs.get("cache_tolerance"):
+            headers["X-Cache-Tolerance"] = str(int(kwargs["cache_tolerance"]))
+        if kwargs.get("respond_with"):
+            headers["X-Respond-With"] = str(kwargs["respond_with"])
+        if kwargs.get("target_selector"):
+            headers["X-Target-Selector"] = str(kwargs["target_selector"])
+        if kwargs.get("preset"):
+            headers["X-Preset"] = str(kwargs["preset"])
+        if kwargs.get("retain_images"):
+            headers["X-Retain-Images"] = str(kwargs["retain_images"])
         payload = {"q": query}
         resp = await self._request("POST", SEARCH_ENDPOINT, headers=headers, json=payload)
         body = resp.json()

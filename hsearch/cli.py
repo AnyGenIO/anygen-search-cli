@@ -192,6 +192,18 @@ def search(
         False, "--include-usage",
         help="Tavily: include credit usage info in response meta.",
     ),
+    answer_depth: Optional[str] = typer.Option(
+        None, "--answer-depth",
+        help="Tavily answer detail level: basic | advanced (requires --answer).",
+    ),
+    moderation: bool = typer.Option(
+        False, "--moderation",
+        help="Exa: enable content moderation to filter unsafe results.",
+    ),
+    livecrawl_timeout: Optional[int] = typer.Option(
+        None, "--livecrawl-timeout",
+        help="Exa: livecrawl timeout in milliseconds (default 10000).",
+    ),
 ) -> None:
     """Run a search across one, many, or all providers."""
     if agent:
@@ -242,6 +254,9 @@ def search(
                 exa_type=exa_type,
                 include_favicon=include_favicon,
                 include_usage=include_usage,
+                answer_depth=answer_depth,
+                moderation=moderation,
+                livecrawl_timeout=livecrawl_timeout,
             )
         )
     except ValueError as e:

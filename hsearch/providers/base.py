@@ -50,7 +50,7 @@ class SearchProvider(ABC):
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(timeout_seconds(), connect=10.0),
             follow_redirects=True,
-            headers={"User-Agent": "hsearch/0.2"},
+            headers={"User-Agent": "hsearch/0.3"},
         )
         # Per-call retries override; can be set via kwargs `_retries`.
         self._retries: int | None = None

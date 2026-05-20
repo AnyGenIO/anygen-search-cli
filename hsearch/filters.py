@@ -166,7 +166,7 @@ def apply_to_firecrawl(query: str, f: Filters, extra: dict[str, Any]) -> tuple[s
     if f.region:
         out["country"] = f.region
     if f.lang:
-        out["lang"] = f.lang
+        out["lang"] = f.lang  # provider puts this in scrapeOptions.location.languages
     if f.sites and not f.exclude:
         out["include_domains"] = [s.lstrip("*.") for s in f.sites]
         return query, out

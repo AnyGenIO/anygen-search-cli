@@ -4,6 +4,37 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.3.1] — 2026-05-20
+
+API alignment update: verified all 6 providers against their latest official docs (2026-05).
+
+### Fixed
+- **Firecrawl sources format** — now sends `[{type: "web"}]` objects per v2 API spec (was incorrectly sending `["web"]` strings).
+- **Firecrawl `lang`** — moved from invalid top-level param to correct `scrapeOptions.location.languages` placement.
+- **Firecrawl `scrapeOptions.formats`** — now sends plain strings (`"markdown"`, `"summary"`) per v2 docs, not objects.
+- **Tavily topic validation** — invalid topics now fall back to `"general"` instead of being forwarded to the API.
+
+### Added
+- **`--mode finance`** — new router preset using Tavily `topic=finance` + `search_depth=advanced` + advanced answer.
+- **`--answer-depth basic|advanced`** — Tavily answer detail level control (Tavily now accepts string values for `include_answer`).
+- **`--moderation`** — Exa content moderation filter for unsafe content.
+- **`--livecrawl-timeout`** — Exa livecrawl timeout in milliseconds.
+- **Exa new params**: `startCrawlDate`/`endCrawlDate` (crawl date filtering), `contents.text.verbosity`/`includeHtmlTags`/`includeSections`/`excludeSections` (text extraction control), `contents.extras.links`/`imageLinks` (link/image extraction), `contents.livecrawlTimeout`.
+- **Exa response fields**: `author` and `image` now captured in `SearchResult`.
+- **Brave**: `spellcheck` and `ui_lang` parameters.
+- **Jina**: `X-Timeout`, `X-Max-Tokens`, `X-Cache-Tolerance`, `X-Preset`, `X-Target-Selector`, `X-Retain-Images`, `X-Respond-With` headers.
+- **Firecrawl**: `timeout` param, `highlights` scrape format.
+- **Dedup**: content/summary/favicon/author/image merging across providers; richness-based scoring (results with content/summary/dates rank higher).
+- **Recall mode**: now also enables Brave `spellcheck`+`extra_snippets` and Exa `moderation`.
+- `SearchResult.author` and `SearchResult.image` fields.
+
+### Changed
+- **Tavily `topic`** validated against `{general, news, finance}` with fallback.
+- Schema updated with new params, finance example, and recall tips.
+
+### Tests
+- **+26 unit tests** (99 total): Firecrawl sources/lang/timeout/highlights, Exa moderation/crawl-dates/livecrawl-timeout/text-verbosity/extras-links/author-image, Tavily finance-topic/invalid-topic/advanced-answer/basic-answer, Brave spellcheck/ui_lang, Jina new headers/respond-with, dedup content-merging/richness-scoring, router finance-mode, CLI answer-depth/moderation/mode-finance/version.
+
 ## [0.2.3] — 2026-05-12
 
 High-recall search update based on current Tavily, Exa, Brave, and Firecrawl docs.

@@ -197,7 +197,7 @@ async def test_firecrawl_multiple_sources():
         mock.post("https://api.firecrawl.dev/v2/search").mock(side_effect=_h)
         async with FirecrawlProvider() as p:
             res = await p.search("q", count=10, sources=["web", "news"])
-    assert captured["body"]["sources"] == ["web", "news"]
+    assert captured["body"]["sources"] == [{"type": "web"}, {"type": "news"}]
     urls = {r.url for r in res}
     assert "https://w.test/1" in urls
     assert "https://n.test/1" in urls
@@ -263,7 +263,7 @@ async def test_firecrawl_summary_format():
         async with FirecrawlProvider() as p:
             res = await p.search("q", count=1, summary=True)
     formats = captured["body"]["scrapeOptions"]["formats"]
-    assert {"type": "summary"} in formats
+    assert "summary" in formats
     assert res[0].summary == "short summary text"
 
 
@@ -465,7 +465,7 @@ def test_cli_answer_mode():
 def test_cli_version_022():
     r = runner.invoke(app, ["--version"])
     assert r.exit_code == 0
-    assert "0.2.3" in r.output
+    assert "0.3.1" in r.output
 
 
 def test_cli_summary_flag_passes_through():
