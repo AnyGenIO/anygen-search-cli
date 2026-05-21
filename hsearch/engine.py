@@ -253,6 +253,9 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["topic"] = "finance"
         extra["search_depth"] = "advanced"
         extra["include_answer"] = "advanced"
+    elif mode_key == "context":
+        extra["search_kind"] = "context"
+        extra["context_threshold_mode"] = "balanced"
     elif mode_key == "recall":
         extra["type"] = "deep-reasoning"
         extra["highlights"] = True
@@ -572,3 +575,240 @@ def extract_urls_sync(
 ) -> list[ExtractResult]:
     """Synchronous wrapper around :func:`extract_urls`."""
     return asyncio.run(extract_urls(urls, provider=provider, concurrency=concurrency))
+
+
+# ---------------------------------------------------------------------------
+# Answer (Exa /answer)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AnswerResponse:
+    """Response from Exa /answer endpoint."""
+
+    answer: str | None = None
+    citations: list[SearchResult] = field(default_factory=list)
+    cost: dict[str, Any] | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if self.answer is not None:
+            out["answer"] = self.answer
+        if self.citations:
+            out["citations"] = [r.to_dict() for r in self.citations]
+        if self.cost:
+            out["cost"] = self.cost
+        if self.error:
+            out["error"] = self.error
+        return out
+
+
+async def answer(
+    query: str,
+    *,
+    text: bool = False,
+    output_schema: dict[str, Any] | None = None,
+) -> AnswerResponse:
+    """Get an LLM-generated answer with citations from Exa.
+
+    Args:
+        query: The question to answer.
+        text: Include full text in citation results.
+        output_schema: JSON Schema for structured output.
+
+    Returns:
+        AnswerResponse with answer, citations, and cost.
+    """
+    try:
+        provider = get_provider("exa")
+    except KeyError as e:
+        return AnswerResponse(error=str(e))
+    try:
+        async with provider:
+            from hsearch.providers.exa import ExaProvider
+
+            if not isinstance(provider, ExaProvider):
+                return AnswerResponse(error="exa provider not available")
+            data = await provider.answer(query, text=text, output_schema=output_schema)
+    except Exception as e:
+        return AnswerResponse(error=f"{type(e).__name__}: {e}")
+
+    answer_val = data.get("answer")
+    if isinstance(answer_val, dict):
+        import json as _json
+
+        answer_val = _json.dumps(answer_val, ensure_ascii=False, indent=2)
+    citations: list[SearchResult] = []
+    for c in data.get("citations") or []:
+        if not isinstance(c, dict):
+            continue
+        citations.append(
+            SearchResult(
+                url=c.get("url", ""),
+                title=c.get("title") or c.get("url", ""),
+                snippet=(c.get("text") or "")[:500],
+                provider="exa",
+                published=c.get("publishedDate"),
+                content=c.get("text") if isinstance(c.get("text"), str) else None,
+                author=c.get("author") if isinstance(c.get("author"), str) else None,
+                favicon=c.get("favicon") if isinstance(c.get("favicon"), str) else None,
+                image=c.get("image") if isinstance(c.get("image"), str) else None,
+                raw=c,
+            )
+        )
+    return AnswerResponse(
+        answer=answer_val if isinstance(answer_val, str) else None,
+        citations=citations,
+        cost=data.get("costDollars") if isinstance(data.get("costDollars"), dict) else None,
+    )
+
+
+def answer_sync(query: str, **kwargs: Any) -> AnswerResponse:
+    """Synchronous wrapper around :func:`answer`."""
+    return asyncio.run(answer(query, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Ground (Jina g.jina.ai)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GroundingResponse:
+    """Response from Jina Grounding API."""
+
+    factuality: float | None = None
+    result: bool | None = None
+    reasoning: str | None = None
+    references: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if self.factuality is not None:
+            out["factuality"] = self.factuality
+        if self.result is not None:
+            out["result"] = self.result
+        if self.reasoning:
+            out["reasoning"] = self.reasoning
+        if self.references:
+            out["references"] = self.references
+        if self.error:
+            out["error"] = self.error
+        return out
+
+
+async def ground(
+    statement: str,
+    *,
+    no_cache: bool = False,
+) -> GroundingResponse:
+    """Fact-check a statement using Jina's Grounding API.
+
+    Args:
+        statement: The claim to verify.
+        no_cache: Bypass Jina cache.
+
+    Returns:
+        GroundingResponse with factuality score, result, reasoning, and references.
+    """
+    try:
+        provider = get_provider("jina")
+    except KeyError as e:
+        return GroundingResponse(error=str(e))
+    try:
+        async with provider:
+            from hsearch.providers.jina import JinaProvider
+
+            if not isinstance(provider, JinaProvider):
+                return GroundingResponse(error="jina provider not available")
+            data = await provider.ground(statement, no_cache=no_cache)
+    except Exception as e:
+        return GroundingResponse(error=f"{type(e).__name__}: {e}")
+
+    d = data.get("data") or data
+    return GroundingResponse(
+        factuality=d.get("factuality") if isinstance(d.get("factuality"), (int, float)) else None,
+        result=d.get("result") if isinstance(d.get("result"), bool) else None,
+        reasoning=d.get("reasoning") if isinstance(d.get("reasoning"), str) else None,
+        references=d.get("references") if isinstance(d.get("references"), list) else [],
+    )
+
+
+def ground_sync(statement: str, **kwargs: Any) -> GroundingResponse:
+    """Synchronous wrapper around :func:`ground`."""
+    return asyncio.run(ground(statement, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Find Similar (Exa /findSimilar)
+# ---------------------------------------------------------------------------
+
+
+async def find_similar(
+    url: str,
+    *,
+    top: int = 10,
+    text: bool = False,
+    highlights: bool = False,
+    summary: bool = False,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    category: str | None = None,
+) -> SearchResponse:
+    """Find pages semantically similar to a given URL using Exa.
+
+    Args:
+        url: The reference URL.
+        top: Max results.
+        text: Include full text content.
+        highlights: Include highlight excerpts.
+        summary: Include LLM summaries.
+        include_domains: Only include these domains.
+        exclude_domains: Exclude these domains.
+        category: Exa category filter.
+
+    Returns:
+        SearchResponse with similar pages.
+    """
+    try:
+        provider = get_provider("exa")
+    except KeyError as e:
+        return SearchResponse(errors={"exa": str(e)})
+    try:
+        async with provider:
+            from hsearch.providers.exa import ExaProvider
+
+            if not isinstance(provider, ExaProvider):
+                return SearchResponse(errors={"exa": "exa provider not available"})
+            kwargs: dict[str, Any] = {}
+            if text:
+                kwargs["with_content"] = True
+            if highlights:
+                kwargs["highlights"] = True
+            if summary:
+                kwargs["summary"] = True
+            if include_domains:
+                kwargs["include_domains"] = include_domains
+            if exclude_domains:
+                kwargs["exclude_domains"] = exclude_domains
+            if category:
+                kwargs["category"] = category
+            results = await provider.find_similar(url, count=top, **kwargs)
+    except Exception as e:
+        return SearchResponse(errors={"exa": f"{type(e).__name__}: {e}"})
+
+    return SearchResponse(
+        results=results[:top],
+        meta={
+            "url": url,
+            "provider": "exa",
+            "total_results": len(results),
+        },
+    )
+
+
+def find_similar_sync(url: str, **kwargs: Any) -> SearchResponse:
+    """Synchronous wrapper around :func:`find_similar`."""
+    return asyncio.run(find_similar(url, **kwargs))

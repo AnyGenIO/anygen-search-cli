@@ -21,7 +21,15 @@ from hsearch.config import (
     get_key,
     timeout_seconds,
 )
-from hsearch.engine import search as engine_search, SearchResponse
+from hsearch.engine import (
+    search as engine_search,
+    answer as engine_answer,
+    ground as engine_ground,
+    find_similar as engine_find_similar,
+    AnswerResponse,
+    GroundingResponse,
+    SearchResponse,
+)
 from hsearch.extract import EXTRACT_PROVIDERS, extract_many
 from hsearch.filters import Filters
 from hsearch.models import SearchResult
@@ -520,6 +528,103 @@ def mcp_cmd() -> None:
             '[red]MCP support is not installed.[/] Install MCP support with: pip install -e ".[mcp]"'
         )
         raise typer.Exit(1)
+
+
+@app.command("answer")
+def answer_cmd(
+    query: str = typer.Argument(..., help="Question to answer."),
+    text: bool = typer.Option(False, "--text", help="Include full text in citations."),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="json | markdown (auto: json when piped)."
+    ),
+) -> None:
+    """Get an LLM-generated answer with citations from Exa."""
+    resp: AnswerResponse = asyncio.run(engine_answer(query, text=text))
+    if resp.error:
+        err_console.print(f"[red]error:[/] {resp.error}")
+        raise typer.Exit(1)
+    if fmt is None:
+        fmt = "markdown" if sys.stdout.isatty() else "json"
+    if fmt == "json":
+        import json
+
+        sys.stdout.write(json.dumps(resp.to_dict(), ensure_ascii=False, indent=2) + "\n")
+    else:
+        if resp.answer:
+            console.print(Panel(resp.answer, title="[bold green]Answer[/]", border_style="green"))
+        if resp.citations:
+            table = Table(title="Citations", header_style="bold cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Title")
+            table.add_column("URL", style="dim")
+            for i, c in enumerate(resp.citations, 1):
+                table.add_row(str(i), c.title, c.url)
+            console.print(table)
+
+
+@app.command("ground")
+def ground_cmd(
+    statement: str = typer.Argument(..., help="Statement to fact-check."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Bypass Jina cache."),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="json | markdown (auto: json when piped)."
+    ),
+) -> None:
+    """Fact-check a statement using Jina's Grounding API (g.jina.ai)."""
+    resp: GroundingResponse = asyncio.run(engine_ground(statement, no_cache=no_cache))
+    if resp.error:
+        err_console.print(f"[red]error:[/] {resp.error}")
+        raise typer.Exit(1)
+    if fmt is None:
+        fmt = "markdown" if sys.stdout.isatty() else "json"
+    if fmt == "json":
+        import json
+
+        sys.stdout.write(json.dumps(resp.to_dict(), ensure_ascii=False, indent=2) + "\n")
+    else:
+        score = resp.factuality
+        result = resp.result
+        color = "green" if result else "red"
+        verdict = "TRUE" if result else "FALSE"
+        console.print(f"[bold {color}]{verdict}[/] (factuality: {score:.2f})" if score is not None else f"[bold {color}]{verdict}[/]")
+        if resp.reasoning:
+            console.print(Panel(resp.reasoning, title="Reasoning", border_style="blue"))
+        if resp.references:
+            table = Table(title="References", header_style="bold cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Supports", width=8)
+            table.add_column("URL", style="dim")
+            table.add_column("Quote")
+            for i, ref in enumerate(resp.references[:10], 1):
+                supports = "[green]Yes[/]" if ref.get("isSupportive") else "[red]No[/]"
+                table.add_row(str(i), supports, str(ref.get("url", "")), str(ref.get("keyQuote", ""))[:80])
+            console.print(table)
+
+
+@app.command("similar")
+def similar_cmd(
+    url: str = typer.Argument(..., help="URL to find similar pages for."),
+    top: int = typer.Option(10, "--top", "-n", help="Max results."),
+    text: bool = typer.Option(False, "--text", help="Include full text content."),
+    highlights: bool = typer.Option(False, "--highlights", help="Include highlight excerpts."),
+    summary: bool = typer.Option(False, "--summary", help="Include LLM summaries."),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="Output format: table | json | markdown | urls."
+    ),
+) -> None:
+    """Find semantically similar pages to a URL using Exa."""
+    resp: SearchResponse = asyncio.run(
+        engine_find_similar(url, top=top, text=text, highlights=highlights, summary=summary)
+    )
+    if not resp.results and resp.errors:
+        for name, msg in resp.errors.items():
+            err_console.print(f"[red]{name}:[/] {msg}")
+        raise typer.Exit(1)
+    if fmt is None:
+        fmt = "table" if sys.stdout.isatty() else "json"
+    emit(resp.results, fmt, console=console, meta=resp.meta, errors=resp.errors)
+    if fmt != "json":
+        _print_errors(resp.errors)
 
 
 @cache_app.command("clear")

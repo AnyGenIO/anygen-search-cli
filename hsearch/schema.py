@@ -340,6 +340,137 @@ SEARCH_SCHEMA: dict[str, Any] = {
             ],
         },
         {
+            "name": "answer",
+            "description": "Get an LLM-generated answer with citations from Exa's /answer endpoint.",
+            "cli_usage": "hsearch answer <query> [options]",
+            "parameters": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The question to answer.",
+                        "cli_flag": "positional argument",
+                    },
+                    "text": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include full text content in citations.",
+                        "cli_flag": "--text",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["json", "markdown"],
+                        "default": "json",
+                        "description": "Output format.",
+                        "cli_flag": "--format / -f",
+                    },
+                },
+            },
+            "examples": [
+                {
+                    "description": "Get a direct answer",
+                    "command": 'hsearch answer "What is the latest valuation of SpaceX?"',
+                },
+                {
+                    "description": "Answer with full citation text",
+                    "command": 'hsearch answer "How does RAG work?" --text -f json',
+                },
+            ],
+        },
+        {
+            "name": "ground",
+            "description": "Fact-check a statement using Jina's Grounding API (g.jina.ai). Returns factuality score, boolean verdict, reasoning, and web references.",
+            "cli_usage": "hsearch ground <statement> [options]",
+            "parameters": {
+                "type": "object",
+                "required": ["statement"],
+                "properties": {
+                    "statement": {
+                        "type": "string",
+                        "description": "The claim or statement to fact-check.",
+                        "cli_flag": "positional argument",
+                    },
+                    "no_cache": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Bypass Jina cache for fresh results.",
+                        "cli_flag": "--no-cache",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["json", "markdown"],
+                        "default": "json",
+                        "description": "Output format.",
+                        "cli_flag": "--format / -f",
+                    },
+                },
+            },
+            "examples": [
+                {
+                    "description": "Fact-check a claim",
+                    "command": 'hsearch ground "The Eiffel Tower is 330 meters tall"',
+                },
+                {
+                    "description": "Fact-check with JSON output",
+                    "command": 'hsearch ground "Python 4.0 was released in 2025" -f json',
+                },
+            ],
+        },
+        {
+            "name": "similar",
+            "description": "Find pages semantically similar to a given URL using Exa's /findSimilar endpoint.",
+            "cli_usage": "hsearch similar <url> [options]",
+            "parameters": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The reference URL to find similar pages for.",
+                        "cli_flag": "positional argument",
+                    },
+                    "top": {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Max results.",
+                        "cli_flag": "--top / -n",
+                    },
+                    "text": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include full text content.",
+                        "cli_flag": "--text",
+                    },
+                    "highlights": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include highlight excerpts.",
+                        "cli_flag": "--highlights",
+                    },
+                    "summary": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include LLM summaries.",
+                        "cli_flag": "--summary",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["json", "table", "markdown", "urls"],
+                        "default": "json",
+                        "description": "Output format.",
+                        "cli_flag": "--format / -f",
+                    },
+                },
+            },
+            "examples": [
+                {
+                    "description": "Find similar pages",
+                    "command": 'hsearch similar "https://example.com/article" --top 5',
+                },
+            ],
+        },
+        {
             "name": "providers",
             "description": "List all providers and their configuration status (which API keys are set).",
             "cli_usage": "hsearch providers",
@@ -374,6 +505,10 @@ SEARCH_SCHEMA: dict[str, Any] = {
         "Errors are in stderr, structured JSON is in stdout — parse stdout only.",
         "Use 'hsearch schema' to get this schema programmatically.",
         "Use --moderation with Exa to filter unsafe content.",
+        "Use 'hsearch answer' for direct Q&A with citations (powered by Exa).",
+        "Use 'hsearch ground' to fact-check claims against the live web (powered by Jina g.jina.ai).",
+        "Use 'hsearch similar' to find pages semantically related to a URL (powered by Exa /findSimilar).",
+        "Use --mode context for Brave LLM Context endpoint — pre-extracted grounding snippets for RAG.",
     ],
 }
 

@@ -6,7 +6,13 @@ import json
 from typing import Any
 
 from hsearch.config import PROVIDER_ENV, configured_providers, get_key
-from hsearch.engine import extract_urls, search as engine_search
+from hsearch.engine import (
+    extract_urls,
+    search as engine_search,
+    answer as engine_answer,
+    ground as engine_ground,
+    find_similar as engine_find_similar,
+)
 from hsearch.providers import list_providers
 from hsearch.schema import render_schema
 
@@ -194,6 +200,36 @@ def schema() -> dict[str, Any]:
     return json.loads(render_schema())
 
 
+async def answer_tool(
+    query: str,
+    text: bool = False,
+) -> dict[str, Any]:
+    """Get an LLM-generated answer with citations from Exa's /answer endpoint."""
+    resp = await engine_answer(query, text=text)
+    return resp.to_dict()
+
+
+async def ground_tool(
+    statement: str,
+    no_cache: bool = False,
+) -> dict[str, Any]:
+    """Fact-check a statement using Jina's Grounding API (g.jina.ai)."""
+    resp = await engine_ground(statement, no_cache=no_cache)
+    return resp.to_dict()
+
+
+async def similar_tool(
+    url: str,
+    top: int = 10,
+    text: bool = False,
+    highlights: bool = False,
+    summary: bool = False,
+) -> dict[str, Any]:
+    """Find pages semantically similar to a given URL using Exa's /findSimilar endpoint."""
+    resp = await engine_find_similar(url, top=top, text=text, highlights=highlights, summary=summary)
+    return resp.to_dict()
+
+
 def build_server() -> Any:
     """Build a FastMCP server with hsearch tools registered."""
     if FastMCP is None:
@@ -204,6 +240,9 @@ def build_server() -> Any:
     )
     server.tool(name="search")(search)
     server.tool(name="extract")(extract)
+    server.tool(name="answer")(answer_tool)
+    server.tool(name="ground")(ground_tool)
+    server.tool(name="similar")(similar_tool)
     server.tool(name="providers")(providers)
     server.tool(name="schema")(schema)
     return server

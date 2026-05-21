@@ -21,6 +21,7 @@ MODE_MAP: dict[str, list[str]] = {
     "fast": ["exa", "tavily"],
     "finance": ["tavily", "serper", "brave"],
     "recall": ["exa", "tavily", "brave", "serper", "firecrawl", "jina"],
+    "context": ["brave"],
 }
 
 # Fallback providers per provider — used when primary provider fails.

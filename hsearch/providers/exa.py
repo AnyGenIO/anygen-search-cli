@@ -6,7 +6,9 @@ from typing import Any
 from hsearch.models import SearchResult
 from hsearch.providers.base import SearchProvider
 
-ENDPOINT = "https://api.exa.ai/search"
+SEARCH_ENDPOINT = "https://api.exa.ai/search"
+ANSWER_ENDPOINT = "https://api.exa.ai/answer"
+FIND_SIMILAR_ENDPOINT = "https://api.exa.ai/findSimilar"
 
 
 class ExaProvider(SearchProvider):
@@ -127,9 +129,94 @@ class ExaProvider(SearchProvider):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        resp = await self._request("POST", ENDPOINT, headers=headers, json=payload)
+        resp = await self._request("POST", SEARCH_ENDPOINT, headers=headers, json=payload)
         data = resp.json()
 
+        out: list[SearchResult] = []
+        for r in (data.get("results") or [])[:count]:
+            text = r.get("text") or ""
+            highlights = r.get("highlights") or []
+            snippet = (highlights[0] if highlights else text)[:500]
+            summary_val = r.get("summary")
+            if isinstance(summary_val, dict):
+                summary_val = summary_val.get("text") or summary_val.get("summary")
+            out.append(
+                SearchResult(
+                    url=r.get("url", ""),
+                    title=r.get("title") or r.get("url", ""),
+                    snippet=snippet,
+                    provider=self.name,
+                    score=float(r.get("score") or 0.0),
+                    published=r.get("publishedDate"),
+                    content=text if isinstance(text, str) and text else None,
+                    summary=summary_val if isinstance(summary_val, str) else None,
+                    favicon=r.get("favicon") if isinstance(r.get("favicon"), str) else None,
+                    author=r.get("author") if isinstance(r.get("author"), str) else None,
+                    image=r.get("image") if isinstance(r.get("image"), str) else None,
+                    raw=r,
+                )
+            )
+        return out
+
+    async def answer(self, query: str, **kwargs: Any) -> dict[str, Any]:
+        """Call Exa /answer endpoint — returns LLM-generated answer with citations."""
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        payload: dict[str, Any] = {"query": query}
+        if kwargs.get("text"):
+            payload["text"] = True
+        if kwargs.get("output_schema"):
+            payload["outputSchema"] = kwargs["output_schema"]
+        headers = {
+            "x-api-key": self.api_key or "",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        resp = await self._request("POST", ANSWER_ENDPOINT, headers=headers, json=payload)
+        return resp.json()
+
+    async def find_similar(self, url: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
+        """Call Exa /findSimilar — returns pages semantically similar to the given URL."""
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        payload: dict[str, Any] = {
+            "url": url,
+            "numResults": max(1, min(count, 100)),
+        }
+        contents: dict[str, Any] = {}
+        if kwargs.get("with_content") or kwargs.get("text"):
+            text_opts: dict[str, Any] = {}
+            max_chars = kwargs.get("text_max_characters", 1000)
+            try:
+                text_opts["maxCharacters"] = int(max_chars)
+            except (TypeError, ValueError):
+                pass
+            contents["text"] = text_opts or True
+        if kwargs.get("highlights"):
+            contents["highlights"] = True
+        if kwargs.get("summary"):
+            contents["summary"] = True
+        if contents:
+            payload["contents"] = contents
+        if kwargs.get("include_domains"):
+            payload["includeDomains"] = kwargs["include_domains"]
+        if kwargs.get("exclude_domains"):
+            payload["excludeDomains"] = kwargs["exclude_domains"]
+        if kwargs.get("start_published_date"):
+            payload["startPublishedDate"] = kwargs["start_published_date"]
+        if kwargs.get("end_published_date"):
+            payload["endPublishedDate"] = kwargs["end_published_date"]
+        if kwargs.get("category"):
+            payload["category"] = kwargs["category"]
+        headers = {
+            "x-api-key": self.api_key or "",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        resp = await self._request("POST", FIND_SIMILAR_ENDPOINT, headers=headers, json=payload)
+        data = resp.json()
         out: list[SearchResult] = []
         for r in (data.get("results") or [])[:count]:
             text = r.get("text") or ""

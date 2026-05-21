@@ -228,7 +228,8 @@ async def test_user_agent_matches_version():
 # ---------- CLI ----------------------------------------------------------------
 
 
-def test_cli_version_050():
+def test_cli_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.5.0" in result.output
+    from hsearch import __version__
+    assert __version__ in result.output

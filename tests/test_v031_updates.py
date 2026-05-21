@@ -486,6 +486,7 @@ def test_cli_mode_finance():
 
 
 def test_cli_version_031():
+    from hsearch import __version__
     r = runner.invoke(app, ["--version"])
     assert r.exit_code == 0
-    assert "0.5.0" in r.output
+    assert __version__ in r.output

@@ -8,6 +8,7 @@ from hsearch.providers.base import SearchProvider
 
 SEARCH_ENDPOINT = "https://s.jina.ai/"
 READER_BASE = "https://r.jina.ai/"
+GROUNDING_ENDPOINT = "https://g.jina.ai/"
 
 
 class JinaProvider(SearchProvider):
@@ -94,3 +95,19 @@ class JinaProvider(SearchProvider):
             return ((body.get("data") or {}).get("content")) or None
         except Exception:
             return resp.text or None
+
+    async def ground(self, statement: str, **kwargs: Any) -> dict[str, Any]:
+        """Call Jina Grounding API (g.jina.ai) — fact-check a statement against the web."""
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        headers = {
+            "Authorization": f"Bearer {self.api_key or ''}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if kwargs.get("no_cache"):
+            headers["X-No-Cache"] = "true"
+        payload: dict[str, Any] = {"statement": statement}
+        resp = await self._request("POST", GROUNDING_ENDPOINT, headers=headers, json=payload)
+        return resp.json()
