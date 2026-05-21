@@ -15,18 +15,19 @@ class JinaProvider(SearchProvider):
     requires_env = ["JINA_API_KEY"]
     supports_extract = True
 
-    def _headers(self, *, json_resp: bool = True, no_content: bool = True) -> dict[str, str]:
+    def _headers(self, *, json_resp: bool = True, no_content: bool = False) -> dict[str, str]:
         h = {
             "Authorization": f"Bearer {self.api_key or ''}",
             "Accept": "application/json" if json_resp else "text/plain",
         }
-        # Search-only mode (skip page fetch) is much faster + cheaper.
         if no_content:
             h["X-Respond-With"] = "no-content"
         return h
 
     async def _search(self, query: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
-        headers = self._headers(json_resp=True, no_content=not kwargs.get("with_content", False))
+        # Default: fetch snippets/descriptions (not full content, but not no-content either)
+        no_content = kwargs.get("no_content", False)
+        headers = self._headers(json_resp=True, no_content=no_content)
         headers["Content-Type"] = "application/json"
         if kwargs.get("site"):
             headers["X-Site"] = str(kwargs["site"])

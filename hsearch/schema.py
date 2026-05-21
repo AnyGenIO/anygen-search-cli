@@ -222,7 +222,17 @@ SEARCH_SCHEMA: dict[str, Any] = {
                             "cache_ttl_seconds": {"type": "integer"},
                             "answer": {
                                 "type": "string",
-                                "description": "Tavily synthesized answer (when --answer is used)",
+                                "description": "Aggregated answer from providers (Tavily, Serper answerBox, Brave summarizer)",
+                            },
+                            "related_searches": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Related search queries from Serper/Brave (up to 10)",
+                            },
+                            "fallback_providers": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Providers that were used as fallback when primary providers failed",
                             },
                         },
                     },
@@ -235,7 +245,10 @@ SEARCH_SCHEMA: dict[str, Any] = {
                                 "title": {"type": "string"},
                                 "snippet": {"type": "string"},
                                 "provider": {"type": "string"},
-                                "score": {"type": "number"},
+                                "score": {
+                                    "type": "number",
+                                    "description": "RRF (Reciprocal Rank Fusion) score — scale-invariant cross-provider ranking",
+                                },
                                 "published": {"type": ["string", "null"]},
                                 "sources": {
                                     "type": "array",
@@ -351,8 +364,13 @@ SEARCH_SCHEMA: dict[str, Any] = {
     "tips_for_llm": [
         "Always use --agent flag for structured JSON output with sensible defaults.",
         "Use --mode to pick the right provider combo: 'news' for current events, 'academic' for papers, 'fast' for speed, 'finance' for financial data, 'recall' for maximum coverage.",
-        "Use --answer to get a synthesized answer from Tavily (good for factual questions). Add --answer-depth advanced for more detail.",
+        "Use --answer to get a synthesized answer aggregated from Tavily, Serper answerBox, and Brave summarizer.",
         "Use --extract-top N to get full page content for the top N results.",
+        "Results are ranked using RRF (Reciprocal Rank Fusion) — multi-source results automatically rank higher.",
+        "Check meta.related_searches for query expansion ideas from Google/Brave.",
+        "If a provider fails, fallback providers are automatically queried — check meta.fallback_providers.",
+        "Serper results include [Knowledge], [PAA], [Answer] tagged results from Google SERP features.",
+        "Brave results include [Info], [FAQ], and discussion forum results for richer recall.",
         "Errors are in stderr, structured JSON is in stdout — parse stdout only.",
         "Use 'hsearch schema' to get this schema programmatically.",
         "Use --moderation with Exa to filter unsafe content.",

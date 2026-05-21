@@ -62,7 +62,7 @@ def render_jsonl(results: Iterable[SearchResult]) -> str:
 # Markdown render limits — keep terminal-friendly by default, but `--raw`
 # bumps content limit so users get the full page they explicitly asked for.
 MD_SNIPPET_MAX = 500
-MD_CONTENT_MAX = 2000  # only used when content is set (i.e. --raw or extract)
+MD_CONTENT_MAX = 50000  # generous limit for --raw/extract — user explicitly asked for full content
 
 
 def render_markdown(results: Iterable[SearchResult]) -> str:

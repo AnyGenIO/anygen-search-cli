@@ -167,6 +167,10 @@ def search(
         2, "--retries",
         help="Per-request retries on 429/5xx (exponential backoff).",
     ),
+    fanout_timeout: Optional[float] = typer.Option(
+        None, "--fanout-timeout",
+        help="Max seconds to wait for all providers; returns partial results on timeout.",
+    ),
     days: Optional[int] = typer.Option(
         None, "--days",
         help="Tavily news mode: results from past N days.",
@@ -336,6 +340,7 @@ def search(
                 exclude=exclude,
                 extract_top=extract_top,
                 extract_provider=extract_provider,
+                fanout_timeout=fanout_timeout,
                 answer=answer,
                 summary=summary,
                 sources=sources,

@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from hsearch.config import PROVIDER_ENV, configured_providers, get_key
-from hsearch.engine import extract_urls, search_sync
+from hsearch.engine import extract_urls, search as engine_search
 from hsearch.providers import list_providers
 from hsearch.schema import render_schema
 
@@ -93,8 +93,7 @@ async def search(
     highlights_query: str | None = None,
 ) -> dict[str, Any]:
     """Run hsearch and return the same JSON shape as ``hsearch search -f json``."""
-    resp = await asyncio.to_thread(
-        search_sync,
+    resp = await engine_search(
         query,
         providers=_as_list(provider),
         mode=mode,

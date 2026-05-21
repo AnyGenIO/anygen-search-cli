@@ -29,7 +29,7 @@ from hsearch.extract import EXTRACT_PROVIDERS, extract_many
 from hsearch.filters import Filters, apply as apply_filters
 from hsearch.models import SearchResult
 from hsearch.providers import ProviderAuthError, ProviderHTTPError, get_provider
-from hsearch.router import providers_for_mode
+from hsearch.router import providers_for_mode, fallback_providers
 
 
 @dataclass
@@ -63,7 +63,7 @@ class ExtractResult:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers (moved from cli.py)
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 
@@ -106,6 +106,16 @@ async def _run_one(
             usage = getattr(provider, "_last_usage", None)
             if isinstance(usage, dict) and usage:
                 extras_out["usage"] = usage
+            # Capture additional SERP features for richer engine-level data
+            kg = getattr(provider, "_last_knowledge_graph", None)
+            if isinstance(kg, dict):
+                extras_out["knowledge_graph"] = kg
+            paa = getattr(provider, "_last_people_also_ask", None)
+            if isinstance(paa, list):
+                extras_out["people_also_ask"] = paa
+            related = getattr(provider, "_last_related_searches", None)
+            if isinstance(related, list):
+                extras_out["related_searches"] = related
     except ProviderAuthError as e:
         return provider_name, None, f"auth: {e}", extras_out
     except ProviderHTTPError as e:
@@ -133,6 +143,8 @@ async def _run_many(
     extra: dict,
     filters: Filters | None = None,
     cache_ttl_override: int | None = None,
+    fanout_timeout: float | None = None,
+    enable_fallback: bool = True,
 ) -> tuple[list[SearchResult], dict[str, str], dict[str, dict]]:
     cache: ResultCache | None = ResultCache() if use_cache else None
     try:
@@ -140,7 +152,45 @@ async def _run_many(
             _run_one(p, query, count, use_cache, cache, extra, filters, cache_ttl_override)
             for p in providers
         ]
-        outcomes = await asyncio.gather(*coros)
+        # Apply fanout timeout — return partial results if some providers are slow
+        if fanout_timeout and fanout_timeout > 0:
+            tasks = [asyncio.ensure_future(c) for c in coros]
+            done, pending = await asyncio.wait(tasks, timeout=fanout_timeout)
+            # Cancel timed-out tasks
+            for t in pending:
+                t.cancel()
+            outcomes = []
+            for t in tasks:
+                if t in done:
+                    outcomes.append(t.result())
+                else:
+                    # Find which provider this was
+                    idx = tasks.index(t)
+                    pname = providers[idx]
+                    outcomes.append((pname, None, "timeout: provider did not respond in time", {}))
+        else:
+            outcomes = await asyncio.gather(*coros)
+
+        # Provider fallback: retry failed providers with alternatives
+        if enable_fallback:
+            failed_providers = set()
+            for name, results, err, _extras in outcomes:
+                if err is not None or results is None:
+                    failed_providers.add(name)
+            already_queried = set(providers)
+            fallback_coros = []
+            fallback_names = []
+            for failed in failed_providers:
+                for fb in fallback_providers(failed):
+                    if fb not in already_queried and fb not in fallback_names:
+                        fallback_names.append(fb)
+                        already_queried.add(fb)
+                        fallback_coros.append(
+                            _run_one(fb, query, count, use_cache, cache, extra, filters, cache_ttl_override)
+                        )
+            if fallback_coros:
+                fallback_outcomes = await asyncio.gather(*fallback_coros)
+                outcomes = list(outcomes) + list(fallback_outcomes)
     finally:
         if cache is not None:
             cache.close()
@@ -191,8 +241,7 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     elif mode_key == "places":
         extra["search_type"] = "places"
     elif mode_key == "answer":
-        # Force-enable answer for --mode answer; setdefault was a no-op because
-        # the CLI passes answer=False explicitly when --answer flag is absent.
+        # Force-enable answer for --mode answer
         kwargs["answer"] = True
     elif mode_key == "deep":
         extra["type"] = "deep-reasoning"
@@ -321,6 +370,21 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     return extra
 
 
+def _aggregate_answers(extras_by_provider: dict[str, dict]) -> str | None:
+    """Aggregate answers from all providers, not just Tavily."""
+    answers: list[str] = []
+    for prov in ("tavily", "serper", "brave", "exa", "firecrawl", "jina"):
+        ans = (extras_by_provider.get(prov) or {}).get("answer")
+        if ans and isinstance(ans, str):
+            answers.append(ans)
+    if not answers:
+        return None
+    if len(answers) == 1:
+        return answers[0]
+    # Return the longest answer (typically the most detailed)
+    return max(answers, key=len)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -343,6 +407,7 @@ async def search(
     extract_top: int = 0,
     extract_provider: str = "jina",
     api_keys: dict[str, str] | None = None,
+    fanout_timeout: float | None = None,
     **kwargs: Any,
 ) -> SearchResponse:
     """Run a search across one or more providers.
@@ -364,6 +429,7 @@ async def search(
         extract_top: Extract content from top N results.
         extract_provider: Provider for content extraction (jina|firecrawl).
         api_keys: Override API keys (e.g. {"tavily": "tvly-xxx"}).
+        fanout_timeout: Max seconds to wait for all providers (partial results on timeout).
         **kwargs: Provider-specific options (answer, summary, raw, depth, etc.)
 
     Returns:
@@ -400,11 +466,13 @@ async def search(
         extra=extra,
         filters=filters,
         cache_ttl_override=effective_cache_ttl,
+        fanout_timeout=fanout_timeout,
+        enable_fallback=True,
     )
 
     merged = dedup_merge(results)
-    limit = max(top, 1) if not all_providers else top * len(resolved_providers)
-    merged = merged[:limit]
+    # --top means total results wanted, not per-provider
+    merged = merged[:max(top, 1)]
 
     if extract_top and extract_top > 0 and merged and extract_provider in EXTRACT_PROVIDERS:
         urls = [r.url for r in merged[:extract_top] if r.url]
@@ -414,12 +482,24 @@ async def search(
             if r.url in url_to_content:
                 r.content = url_to_content[r.url]
 
-    tavily_answer = (extras_by_provider.get("tavily") or {}).get("answer")
+    # Aggregate answers from all providers
+    aggregated_answer = _aggregate_answers(extras_by_provider)
+
     cache_status = {
         p: extras_by_provider.get(p, {}).get("cached")
         for p in resolved_providers
         if "cached" in extras_by_provider.get(p, {})
     }
+
+    # Collect related searches from all providers
+    all_related: list[str] = []
+    for prov_extras in extras_by_provider.values():
+        rs = prov_extras.get("related_searches")
+        if isinstance(rs, list):
+            for q in rs:
+                if q and q not in all_related:
+                    all_related.append(q)
+
     meta: dict[str, Any] = {
         "query": query,
         "mode": mode_key or "default",
@@ -428,6 +508,9 @@ async def search(
         "cached": cache_status,
         "cache_ttl_seconds": effective_cache_ttl,
     }
+    if all_related:
+        meta["related_searches"] = all_related[:10]
+
     usage_by_provider = {
         p: extras_by_provider[p]["usage"]
         for p in resolved_providers
@@ -439,9 +522,17 @@ async def search(
         meta["extract_top"] = extract_top
         meta["extract_provider"] = extract_provider
 
+    # Track which providers contributed via fallback
+    all_providers_in_results = set()
+    for name in extras_by_provider:
+        if name not in resolved_providers and extras_by_provider[name].get("cached") is not None:
+            all_providers_in_results.add(name)
+    if all_providers_in_results:
+        meta["fallback_providers"] = sorted(all_providers_in_results)
+
     return SearchResponse(
         results=merged,
-        answer=tavily_answer,
+        answer=aggregated_answer,
         errors=errors,
         meta=meta,
     )

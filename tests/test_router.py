@@ -8,9 +8,10 @@ def test_modes_defined():
 
 def test_routing_picks_configured(monkeypatch):
     # All keys are populated by conftest, so we should get the preferred providers.
-    assert providers_for_mode("news") == ["brave", "serper"]
-    assert providers_for_mode("academic") == ["exa"]
-    assert providers_for_mode("realtime") == ["serper"]
+    # Broadened routing: news now includes tavily, academic includes serper, realtime includes brave
+    assert providers_for_mode("news") == ["brave", "serper", "tavily"]
+    assert providers_for_mode("academic") == ["exa", "serper"]
+    assert providers_for_mode("realtime") == ["serper", "brave"]
 
 
 def test_unknown_mode_falls_back_to_default():

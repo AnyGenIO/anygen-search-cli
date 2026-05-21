@@ -32,7 +32,7 @@ class ExaProvider(SearchProvider):
 
         contents: dict[str, Any] = {}
 
-        if kwargs.get("highlights", True):
+        if kwargs.get("highlights", False):
             if kwargs.get("highlights_query") or kwargs.get("highlights_max_characters"):
                 h: dict[str, Any] = {}
                 if kwargs.get("highlights_query"):

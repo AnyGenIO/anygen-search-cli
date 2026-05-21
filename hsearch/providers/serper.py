@@ -38,7 +38,17 @@ class SerperProvider(SearchProvider):
     name = "serper"
     requires_env = ["SERPER_API_KEY"]
 
+    _last_answer: str | None = None
+    _last_knowledge_graph: dict[str, Any] | None = None
+    _last_people_also_ask: list[dict[str, Any]] | None = None
+    _last_related_searches: list[str] | None = None
+
     async def _search(self, query: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
+        self._last_answer = None
+        self._last_knowledge_graph = None
+        self._last_people_also_ask = None
+        self._last_related_searches = None
+
         kind = (kwargs.get("search_kind") or kwargs.get("search_type") or kwargs.get("endpoint") or "web").lower()
         endpoint_key = KIND_MAP.get(kind, "search") if kind in KIND_MAP else (kind if kind in ENDPOINTS else "search")
         url = ENDPOINTS.get(endpoint_key, ENDPOINTS["search"])
@@ -66,6 +76,9 @@ class SerperProvider(SearchProvider):
         }
         resp = await self._request("POST", url, headers=headers, json=payload)
         data = resp.json()
+
+        # Extract SERP features for richer recall
+        self._extract_serp_features(data)
 
         out: list[SearchResult] = []
         if endpoint_key == "news":
@@ -160,17 +173,104 @@ class SerperProvider(SearchProvider):
                     )
                 )
         else:
+            # Main organic web results
             items = data.get("organic") or []
             for r in items[:count]:
+                # Merge siteLinks into snippet for richer content
+                sitelinks = r.get("sitelinks") or []
+                sitelink_text = ""
+                if isinstance(sitelinks, list) and sitelinks:
+                    sl_parts = [sl.get("title", "") for sl in sitelinks[:4] if isinstance(sl, dict) and sl.get("title")]
+                    if sl_parts:
+                        sitelink_text = " | Related: " + ", ".join(sl_parts)
+                snippet = (r.get("snippet", "") or "") + sitelink_text
                 out.append(
                     SearchResult(
                         url=r.get("link", ""),
                         title=r.get("title", ""),
-                        snippet=r.get("snippet", "") or "",
+                        snippet=snippet,
                         provider=self.name,
-                        score=float(r.get("position", 0) or 0) * -0.01,
+                        score=0.0,
                         published=r.get("date"),
                         raw=r,
                     )
                 )
+
+            # Append answerBox as a top result if available
+            answer_box = data.get("answerBox")
+            if isinstance(answer_box, dict) and answer_box.get("answer") or answer_box and answer_box.get("snippet"):
+                ab_snippet = answer_box.get("answer") or answer_box.get("snippet") or ""
+                ab_title = answer_box.get("title") or "Google Answer"
+                ab_url = answer_box.get("link") or ""
+                if ab_url and ab_snippet:
+                    out.insert(0, SearchResult(
+                        url=ab_url,
+                        title=f"[Answer] {ab_title}",
+                        snippet=ab_snippet,
+                        provider=self.name,
+                        raw=answer_box,
+                    ))
+
+            # Append knowledgeGraph as a result for entity queries
+            kg = data.get("knowledgeGraph")
+            if isinstance(kg, dict) and kg.get("title"):
+                kg_desc = kg.get("description", "") or ""
+                kg_type = kg.get("type", "") or ""
+                attrs = kg.get("attributes") or {}
+                attr_text = " | ".join(f"{k}: {v}" for k, v in attrs.items() if v) if isinstance(attrs, dict) else ""
+                kg_snippet = " — ".join(s for s in (kg_type, kg_desc, attr_text) if s)
+                kg_url = kg.get("descriptionLink") or kg.get("website") or ""
+                if kg_url:
+                    out.insert(0, SearchResult(
+                        url=kg_url,
+                        title=f"[Knowledge] {kg.get('title', '')}",
+                        snippet=kg_snippet[:500],
+                        provider=self.name,
+                        image=kg.get("imageUrl") if isinstance(kg.get("imageUrl"), str) else None,
+                        raw=kg,
+                    ))
+
+            # Append "People Also Ask" as extra results for recall
+            paa = data.get("peopleAlsoAsk") or []
+            if isinstance(paa, list):
+                for item in paa[:3]:
+                    if not isinstance(item, dict):
+                        continue
+                    paa_url = item.get("link", "")
+                    paa_title = item.get("question", "") or item.get("title", "")
+                    paa_snippet = item.get("snippet", "") or item.get("answer", "") or ""
+                    if paa_url and paa_title:
+                        out.append(SearchResult(
+                            url=paa_url,
+                            title=f"[PAA] {paa_title}",
+                            snippet=paa_snippet,
+                            provider=self.name,
+                            raw=item,
+                        ))
+
         return out
+
+    def _extract_serp_features(self, data: dict[str, Any]) -> None:
+        """Stash SERP features on the instance for engine-level consumption."""
+        # Answer box
+        ab = data.get("answerBox")
+        if isinstance(ab, dict):
+            self._last_answer = ab.get("answer") or ab.get("snippet")
+
+        # Knowledge graph
+        kg = data.get("knowledgeGraph")
+        if isinstance(kg, dict) and kg.get("title"):
+            self._last_knowledge_graph = kg
+
+        # People Also Ask
+        paa = data.get("peopleAlsoAsk")
+        if isinstance(paa, list) and paa:
+            self._last_people_also_ask = paa
+
+        # Related searches
+        rs = data.get("relatedSearches")
+        if isinstance(rs, list) and rs:
+            self._last_related_searches = [
+                item.get("query", "") for item in rs
+                if isinstance(item, dict) and item.get("query")
+            ]

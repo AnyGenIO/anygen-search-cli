@@ -156,6 +156,7 @@ class FirecrawlProvider(SearchProvider):
                         title=r.get("title", "") or url,
                         snippet=r.get("description", "") or r.get("snippet", "") or "",
                         provider=self.name,
+                        score=float(r.get("score") or 0.0),
                         published=r.get("date") or r.get("published"),
                         summary=summary_val if isinstance(summary_val, str) else None,
                         content=content_val if isinstance(content_val, str) else None,

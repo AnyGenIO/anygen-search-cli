@@ -57,8 +57,10 @@ class Filters:
 
     # ---- helpers ------------------------------------------------------------
     def time_range_dates(self) -> tuple[str, str] | None:
-        """If --time uses word form, expand to (start, end) ISO dates.  None if range form."""
-        if not self.time or self.time in _TIME_WORDS:
+        """Expand --time to (start, end) ISO dates. Returns None only if no time filter set."""
+        if not self.time:
+            return None
+        if self.time in _TIME_WORDS:
             today = date.today()
             spans = {
                 "day": timedelta(days=1),
@@ -66,10 +68,8 @@ class Filters:
                 "month": timedelta(days=30),
                 "year": timedelta(days=365),
             }
-            if self.time in spans:
-                start = today - spans[self.time]
-                return start.isoformat(), today.isoformat()
-            return None
+            start = today - spans[self.time]
+            return start.isoformat(), today.isoformat()
         m = _DATE_RE.match(self.time)
         if m:
             return m.group(1), m.group(2)

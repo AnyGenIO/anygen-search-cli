@@ -1,25 +1,36 @@
-"""Mode → providers routing."""
+"""Mode → providers routing with broadened coverage for maximum recall."""
 from __future__ import annotations
 
 from hsearch.config import configured_providers
 
 # Per-mode provider preference order. Real selection is intersected with what's configured.
+# Broadened vs original: each mode now includes more providers for better recall.
 MODE_MAP: dict[str, list[str]] = {
-    "default": ["tavily"],
-    "news": ["brave", "serper"],
-    "academic": ["exa"],
-    "code": ["exa", "brave"],
-    "general": ["tavily", "brave"],
-    "realtime": ["serper"],
+    "default": ["tavily", "brave"],
+    "news": ["brave", "serper", "tavily"],
+    "academic": ["exa", "serper"],
+    "code": ["exa", "brave", "serper"],
+    "general": ["tavily", "brave", "serper"],
+    "realtime": ["serper", "brave"],
     "shopping": ["serper", "brave"],
     "video": ["serper", "brave"],
     "images": ["serper", "brave"],
     "places": ["serper", "brave"],
     "answer": ["tavily", "brave"],
-    "deep": ["exa"],
+    "deep": ["exa", "tavily"],
     "fast": ["exa", "tavily"],
     "finance": ["tavily", "serper", "brave"],
     "recall": ["exa", "tavily", "brave", "serper", "firecrawl", "jina"],
+}
+
+# Fallback providers per provider — used when primary provider fails.
+FALLBACK_MAP: dict[str, list[str]] = {
+    "tavily": ["brave", "serper"],
+    "brave": ["serper", "tavily"],
+    "serper": ["brave", "tavily"],
+    "exa": ["tavily", "brave"],
+    "firecrawl": ["jina", "brave"],
+    "jina": ["firecrawl", "brave"],
 }
 
 ALL_MODES: tuple[str, ...] = tuple(MODE_MAP)
@@ -39,3 +50,10 @@ def providers_for_mode(mode: str | None) -> list[str]:
     # Fallback: pick any configured provider deterministically.
     fallback = configured_providers()
     return fallback[:1]
+
+
+def fallback_providers(failed: str) -> list[str]:
+    """Return fallback providers for a failed provider, filtered to what's configured."""
+    available = set(configured_providers())
+    candidates = FALLBACK_MAP.get(failed, [])
+    return [p for p in candidates if p in available]
