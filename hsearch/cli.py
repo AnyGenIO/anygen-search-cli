@@ -573,7 +573,23 @@ def ground_cmd(
     """Fact-check a statement using Jina's Grounding API (g.jina.ai)."""
     resp: GroundingResponse = asyncio.run(engine_ground(statement, no_cache=no_cache))
     if resp.error:
-        err_console.print(f"[red]error:[/] {resp.error}")
+        # Jina's g.jina.ai often returns Cloudflare 524 (origin > 120s) when
+        # under heavy load. Give the user actionable guidance instead of a
+        # raw HTTP error blob.
+        err_msg = str(resp.error)
+        if "524" in err_msg or "timeout" in err_msg.lower():
+            err_console.print(
+                f"[red]Jina Grounding API timed out.[/] "
+                "g.jina.ai had to scrape multiple reference pages and didn't "
+                "finish within its 120s Cloudflare origin window. This is a "
+                "Jina-side load/availability issue, not an hsearch bug.\n"
+                "[yellow]Try:[/] shorter statement, retry in a few minutes, "
+                "or fall back to `hsearch search ... --mode answer` for a "
+                "synthesized answer with citations from Tavily/Brave.\n"
+                f"[dim]raw: {err_msg[:200]}[/]"
+            )
+        else:
+            err_console.print(f"[red]error:[/] {err_msg}")
         raise typer.Exit(1)
     if fmt is None:
         fmt = "markdown" if sys.stdout.isatty() else "json"

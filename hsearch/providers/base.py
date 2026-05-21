@@ -125,15 +125,19 @@ class SearchProvider(ABC):
         headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
         json: Any | None = None,
+        timeout: float | httpx.Timeout | None = None,
     ) -> httpx.Response:
         max_retries = self._retries if self._retries is not None else _default_retries()
         attempt = 0
         last_exc: Exception | None = None
+        # Build kwargs for client.request — only include timeout if explicitly
+        # provided, so the default AsyncClient timeout remains the fallback.
+        req_kwargs: dict[str, Any] = {"headers": headers, "params": params, "json": json}
+        if timeout is not None:
+            req_kwargs["timeout"] = timeout
         while True:
             try:
-                resp = await self._client.request(
-                    method, url, headers=headers, params=params, json=json
-                )
+                resp = await self._client.request(method, url, **req_kwargs)
             except httpx.TimeoutException as e:
                 last_exc = e
                 if attempt < max_retries:

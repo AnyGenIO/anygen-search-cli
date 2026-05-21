@@ -97,7 +97,13 @@ class JinaProvider(SearchProvider):
             return resp.text or None
 
     async def ground(self, statement: str, **kwargs: Any) -> dict[str, Any]:
-        """Call Jina Grounding API (g.jina.ai) — fact-check a statement against the web."""
+        """Call Jina Grounding API (g.jina.ai) — fact-check a statement against the web.
+
+        Grounding scrapes multiple reference pages server-side and runs an LLM
+        synthesis; typical wall time is 30–90 s. We pass an explicit long
+        timeout (default 180 s, overridable via ``HSEARCH_GROUND_TIMEOUT``) so
+        the default 15 s search timeout doesn't kill the request.
+        """
         if not self.is_configured():
             from hsearch.providers.base import ProviderAuthError
             raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
@@ -109,5 +115,13 @@ class JinaProvider(SearchProvider):
         if kwargs.get("no_cache"):
             headers["X-No-Cache"] = "true"
         payload: dict[str, Any] = {"statement": statement}
-        resp = await self._request("POST", GROUNDING_ENDPOINT, headers=headers, json=payload)
+        import os
+        ground_timeout = float(os.environ.get("HSEARCH_GROUND_TIMEOUT", "180"))
+        resp = await self._request(
+            "POST",
+            GROUNDING_ENDPOINT,
+            headers=headers,
+            json=payload,
+            timeout=ground_timeout,
+        )
         return resp.json()

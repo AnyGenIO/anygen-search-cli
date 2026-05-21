@@ -581,3 +581,98 @@ class TestAggregatedAnswerInMeta:
         )
         assert resp.answer is None
         assert "answer" not in resp.meta
+
+
+# ---- Regression: ground() uses long timeout to avoid 15s default kill ----
+
+
+class TestGroundLongTimeout:
+    """v0.6.0 regression: hsearch ground was using the default 15s search
+    timeout for g.jina.ai, which routinely takes 30-90s. Fixed by passing
+    an explicit 180s timeout (overridable via HSEARCH_GROUND_TIMEOUT)."""
+
+    @respx.mock
+    async def test_ground_passes_explicit_timeout_to_request(self, monkeypatch):
+        monkeypatch.setenv("JINA_API_KEY", "test-key")
+        from hsearch.providers.jina import JinaProvider, GROUNDING_ENDPOINT
+
+        respx.post(GROUNDING_ENDPOINT).mock(
+            return_value=httpx.Response(200, json={
+                "data": {"factuality": 0.9, "result": True, "reasoning": "ok", "references": []}
+            })
+        )
+        # Patch the JinaProvider's _request to capture the timeout kwarg
+        captured: dict = {}
+        async with JinaProvider() as p:
+            orig = p._request
+            async def spy(*args, **kw):
+                captured["timeout"] = kw.get("timeout")
+                return await orig(*args, **kw)
+            p._request = spy
+            await p.ground("test statement")
+        # Default should be 180s, override via env
+        assert captured["timeout"] == 180.0
+
+    @respx.mock
+    async def test_ground_honors_env_override(self, monkeypatch):
+        monkeypatch.setenv("JINA_API_KEY", "test-key")
+        monkeypatch.setenv("HSEARCH_GROUND_TIMEOUT", "45")
+        from hsearch.providers.jina import JinaProvider, GROUNDING_ENDPOINT
+
+        respx.post(GROUNDING_ENDPOINT).mock(
+            return_value=httpx.Response(200, json={
+                "data": {"factuality": 0.9, "result": True, "reasoning": "ok", "references": []}
+            })
+        )
+        captured: dict = {}
+        async with JinaProvider() as p:
+            orig = p._request
+            async def spy(*args, **kw):
+                captured["timeout"] = kw.get("timeout")
+                return await orig(*args, **kw)
+            p._request = spy
+            await p.ground("test")
+        assert captured["timeout"] == 45.0
+
+
+class TestRequestAcceptsTimeoutKwarg:
+    """v0.6.0: base.SearchProvider._request now accepts an optional ``timeout``
+    kwarg so individual provider calls can override the default."""
+
+    @respx.mock
+    async def test_request_passes_timeout_to_httpx(self, monkeypatch):
+        monkeypatch.setenv("JINA_API_KEY", "test-key")
+        from hsearch.providers.jina import JinaProvider
+        from unittest.mock import AsyncMock, MagicMock
+        import httpx as _httpx
+
+        async with JinaProvider() as p:
+            # Wrap the underlying httpx client to capture the request kwargs
+            captured: dict = {}
+            orig_request = p._client.request
+            async def spy(method, url, **kw):
+                captured.update(kw)
+                # Return a minimal fake response
+                req = _httpx.Request(method, url)
+                return _httpx.Response(200, json={"ok": True}, request=req)
+            p._client.request = spy
+            await p._request("GET", "https://example.com", timeout=42.0)
+        assert captured.get("timeout") == 42.0
+
+    @respx.mock
+    async def test_request_omits_timeout_when_not_provided(self, monkeypatch):
+        monkeypatch.setenv("JINA_API_KEY", "test-key")
+        from hsearch.providers.jina import JinaProvider
+        import httpx as _httpx
+
+        async with JinaProvider() as p:
+            captured: dict = {}
+            async def spy(method, url, **kw):
+                captured.update(kw)
+                req = _httpx.Request(method, url)
+                return _httpx.Response(200, json={"ok": True}, request=req)
+            p._client.request = spy
+            await p._request("GET", "https://example.com")
+        # When timeout is not provided, it should not be in kwargs (so the
+        # client's default applies)
+        assert "timeout" not in captured
