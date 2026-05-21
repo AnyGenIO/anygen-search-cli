@@ -511,6 +511,11 @@ async def search(
         "cached": cache_status,
         "cache_ttl_seconds": effective_cache_ttl,
     }
+    # Surface aggregated answer in meta so CLI --format json consumers can read
+    # it via `jq .meta.answer`. SearchResponse.answer remains the primary SDK
+    # accessor — this is purely additive for CLI/JSON parity.
+    if aggregated_answer:
+        meta["answer"] = aggregated_answer
     if all_related:
         meta["related_searches"] = all_related[:10]
 

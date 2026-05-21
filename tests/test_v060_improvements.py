@@ -531,3 +531,53 @@ class TestSerperSiteLinks:
             results = await p.search("Python")
         assert "Downloads" in results[0].snippet
         assert "Documentation" in results[0].snippet
+
+
+# ---- Regression: aggregated answer surfaced in meta for CLI/JSON parity ----
+
+
+class TestAggregatedAnswerInMeta:
+    """v0.6.0 regression: --format json was dropping resp.answer because it
+    only lived on SearchResponse.answer, not in meta. Fixed by mirroring
+    aggregated_answer into meta['answer']."""
+
+    @respx.mock
+    async def test_meta_answer_populated_when_tavily_returns_answer(self, monkeypatch):
+        monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+        respx.post("https://api.tavily.com/search").mock(
+            return_value=httpx.Response(200, json={
+                "answer": "The capital of France is Paris.",
+                "results": [
+                    {"url": "https://example.com", "title": "Paris", "content": "..."},
+                ],
+            })
+        )
+        resp = await engine_search(
+            "capital of France",
+            providers=["tavily"],
+            answer=True,
+            top=1,
+            no_cache=True,
+        )
+        # Both surfaces must agree
+        assert resp.answer == "The capital of France is Paris."
+        assert resp.meta.get("answer") == "The capital of France is Paris."
+
+    @respx.mock
+    async def test_meta_answer_absent_when_no_provider_returns_one(self, monkeypatch):
+        monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+        respx.post("https://api.tavily.com/search").mock(
+            return_value=httpx.Response(200, json={
+                "results": [
+                    {"url": "https://example.com", "title": "X", "content": "..."},
+                ],
+            })
+        )
+        resp = await engine_search(
+            "q",
+            providers=["tavily"],
+            top=1,
+            no_cache=True,
+        )
+        assert resp.answer is None
+        assert "answer" not in resp.meta
