@@ -13,6 +13,14 @@ from hsearch.config import get_key, timeout_seconds
 from hsearch.models import SearchResult
 
 
+def _get_version() -> str:
+    try:
+        from hsearch import __version__
+        return __version__
+    except Exception:
+        return "0.0.0"
+
+
 class ProviderAuthError(RuntimeError):
     """Raised when a provider rejects auth (401/403)."""
 
@@ -50,7 +58,7 @@ class SearchProvider(ABC):
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(timeout_seconds(), connect=10.0),
             follow_redirects=True,
-            headers={"User-Agent": "hsearch/0.3"},
+            headers={"User-Agent": f"hsearch/{_get_version()}"},
         )
         # Per-call retries override; can be set via kwargs `_retries`.
         self._retries: int | None = None

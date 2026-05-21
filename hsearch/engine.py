@@ -297,6 +297,26 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["remove_selector"] = kwargs["jina_remove_selector"]
     if kwargs.get("jina_generated_alt"):
         extra["with_generated_alt"] = True
+    if kwargs.get("safe_search"):
+        extra["safe_search"] = True
+    if kwargs.get("project_id"):
+        extra["project_id"] = kwargs["project_id"]
+    if kwargs.get("firecrawl_only_clean_content"):
+        extra["only_clean_content"] = True
+    if kwargs.get("firecrawl_max_age") is not None:
+        extra["max_age"] = kwargs["firecrawl_max_age"]
+    if kwargs.get("firecrawl_min_age") is not None:
+        extra["min_age"] = kwargs["firecrawl_min_age"]
+    if kwargs.get("firecrawl_block_ads") is not None:
+        extra["block_ads"] = kwargs["firecrawl_block_ads"]
+    if kwargs.get("firecrawl_proxy"):
+        extra["proxy"] = kwargs["firecrawl_proxy"]
+    if kwargs.get("firecrawl_question"):
+        extra["question"] = kwargs["firecrawl_question"]
+    if kwargs.get("highlights_query"):
+        extra["highlights_query"] = kwargs["highlights_query"]
+    if kwargs.get("exa_output_schema"):
+        extra["output_schema"] = kwargs["exa_output_schema"]
 
     return extra
 

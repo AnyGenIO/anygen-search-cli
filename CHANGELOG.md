@@ -4,6 +4,46 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.5.0] — 2026-05-21
+
+API alignment release: fixes deprecated Exa parameters, adds new Firecrawl/Tavily
+features from latest docs, and syncs MCP server with all CLI options.
+
+### Fixed
+- **Exa `startCrawlDate`/`endCrawlDate` removed** — these params were deprecated
+  and silently ignored since 2026-04-15, fully removed on 2026-05-01. hsearch no
+  longer sends them, avoiding false sense of date filtering.
+- **User-Agent now dynamic** — `hsearch/X.Y.Z` matches `__version__` instead of
+  hardcoded `hsearch/0.3`.
+- **Firecrawl `highlights` format is now valid** — the v2 API supports it with an
+  optional `query` sub-parameter. Removed incorrect drop logic.
+
+### Added
+- **Firecrawl new scrapeOptions**:
+  - `--firecrawl-clean-content` — LLM-based boilerplate cleanup (beta `onlyCleanContent`).
+  - `--firecrawl-max-age` / `--firecrawl-min-age` — cache freshness control in ms.
+  - `--firecrawl-block-ads` / `--firecrawl-no-block-ads` — ad/popup blocking toggle.
+  - `--firecrawl-proxy` — proxy tier selection: `basic | enhanced | auto`.
+  - `--firecrawl-question` — ask a question about each scraped page.
+  - `--highlights-query` — relevance query for Firecrawl/Exa highlights.
+  - `enterprise` param support for Zero Data Retention.
+- **Tavily new params**:
+  - `--safe-search` — filter adult/unsafe content (Enterprise).
+  - `--project-id` — `X-Project-ID` header for per-project usage tracking
+    (also reads `TAVILY_PROJECT` env var).
+- **Exa new params**:
+  - `output_schema` support for structured extraction via JSON Schema.
+- **MCP server** fully synced with CLI — all Firecrawl, Jina, and Tavily params
+  now available via MCP tools.
+
+### Changed
+- Version bumped to `0.5.0`.
+
+### Tests
+- **123 unit tests passing** (13 new for v0.5.0 features).
+- Coverage: Exa deprecation removal, Firecrawl new formats/scrapeOptions,
+  Tavily safe_search/project_id/env, User-Agent version match.
+
 ## [0.4.0] — 2026-05-20
 
 Optimization release: provider drift follow-up, native MCP server mode, and

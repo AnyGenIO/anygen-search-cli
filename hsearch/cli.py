@@ -267,6 +267,42 @@ def search(
         False, "--jina-generated-alt",
         help="Jina: caption images with generated alt text.",
     ),
+    safe_search: bool = typer.Option(
+        False, "--safe-search",
+        help="Tavily: filter adult/unsafe content (Enterprise only).",
+    ),
+    project_id: Optional[str] = typer.Option(
+        None, "--project-id",
+        help="Tavily: X-Project-ID header for per-project usage tracking.",
+    ),
+    firecrawl_only_clean_content: bool = typer.Option(
+        False, "--firecrawl-clean-content",
+        help="Firecrawl: LLM-based cleanup of residual boilerplate (beta).",
+    ),
+    firecrawl_max_age: Optional[int] = typer.Option(
+        None, "--firecrawl-max-age",
+        help="Firecrawl scrapeOptions.maxAge in ms (cache freshness threshold).",
+    ),
+    firecrawl_min_age: Optional[int] = typer.Option(
+        None, "--firecrawl-min-age",
+        help="Firecrawl scrapeOptions.minAge in ms (cache-only mode, set 1 for any cached).",
+    ),
+    firecrawl_block_ads: Optional[bool] = typer.Option(
+        None, "--firecrawl-block-ads/--firecrawl-no-block-ads",
+        help="Firecrawl: enable/disable ad and cookie popup blocking.",
+    ),
+    firecrawl_proxy: Optional[str] = typer.Option(
+        None, "--firecrawl-proxy",
+        help="Firecrawl proxy tier: basic | enhanced | auto.",
+    ),
+    firecrawl_question: Optional[str] = typer.Option(
+        None, "--firecrawl-question",
+        help="Firecrawl: ask a question about each scraped page (returns answer).",
+    ),
+    highlights_query: Optional[str] = typer.Option(
+        None, "--highlights-query",
+        help="Firecrawl/Exa: query string for highlights relevance.",
+    ),
 ) -> None:
     """Run a search across one, many, or all providers."""
     if agent:
@@ -336,6 +372,15 @@ def search(
                 jina_wait_for=jina_wait_for,
                 jina_remove_selector=jina_remove_selector,
                 jina_generated_alt=jina_generated_alt,
+                safe_search=safe_search,
+                project_id=project_id,
+                firecrawl_only_clean_content=firecrawl_only_clean_content,
+                firecrawl_max_age=firecrawl_max_age,
+                firecrawl_min_age=firecrawl_min_age,
+                firecrawl_block_ads=firecrawl_block_ads,
+                firecrawl_proxy=firecrawl_proxy,
+                firecrawl_question=firecrawl_question,
+                highlights_query=highlights_query,
             )
         )
     except ValueError as e:

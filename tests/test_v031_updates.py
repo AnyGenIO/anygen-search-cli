@@ -86,13 +86,7 @@ async def test_firecrawl_timeout_param():
 
 @pytest.mark.asyncio
 async def test_firecrawl_highlights_format():
-    """Firecrawl v2 rejects 'highlights' scrape format (verified live 2026-05-20).
-
-    The format was documented in older Firecrawl docs but the v2 API only
-    accepts: markdown|html|rawHtml|links|images|summary|json|question|query|screenshot.
-    hsearch now silently drops `highlights=True` for Firecrawl so `--mode recall`
-    (which sets highlights for Exa) doesn't 400 the Firecrawl call.
-    """
+    """Firecrawl v2 now supports 'highlights' as a valid scrapeOptions format."""
     captured: dict = {}
 
     def _h(req: httpx.Request) -> httpx.Response:
@@ -105,9 +99,29 @@ async def test_firecrawl_highlights_format():
         mock.post("https://api.firecrawl.dev/v2/search").mock(side_effect=_h)
         async with FirecrawlProvider() as p:
             await p.search("q", count=1, highlights=True)
-    # highlights must NOT leak into the wire payload — Firecrawl 400s on it.
     formats = (captured["body"].get("scrapeOptions") or {}).get("formats", [])
-    assert "highlights" not in formats
+    assert "highlights" in formats
+
+
+@pytest.mark.asyncio
+async def test_firecrawl_highlights_with_query():
+    """Firecrawl highlights format with query sub-parameter."""
+    captured: dict = {}
+
+    def _h(req: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(req.content.decode())
+        return httpx.Response(
+            200, json={"success": True, "data": {"web": []}}
+        )
+
+    with respx.mock(assert_all_called=True) as mock:
+        mock.post("https://api.firecrawl.dev/v2/search").mock(side_effect=_h)
+        async with FirecrawlProvider() as p:
+            await p.search("q", count=1, highlights=True, highlights_query="important parts")
+    formats = (captured["body"].get("scrapeOptions") or {}).get("formats", [])
+    highlight_fmt = [f for f in formats if isinstance(f, dict) and f.get("type") == "highlights"]
+    assert len(highlight_fmt) == 1
+    assert highlight_fmt[0]["query"] == "important parts"
 
 
 # ---------- Exa --------------------------------------------------------------
@@ -129,7 +143,8 @@ async def test_exa_moderation():
 
 
 @pytest.mark.asyncio
-async def test_exa_crawl_dates():
+async def test_exa_crawl_dates_removed():
+    """startCrawlDate/endCrawlDate removed from Exa API on 2026-05-01."""
     captured: dict = {}
 
     def _h(req: httpx.Request) -> httpx.Response:
@@ -144,8 +159,8 @@ async def test_exa_crawl_dates():
                 start_crawl_date="2025-01-01T00:00:00.000Z",
                 end_crawl_date="2026-01-01T00:00:00.000Z",
             )
-    assert captured["body"]["startCrawlDate"] == "2025-01-01T00:00:00.000Z"
-    assert captured["body"]["endCrawlDate"] == "2026-01-01T00:00:00.000Z"
+    assert "startCrawlDate" not in captured["body"]
+    assert "endCrawlDate" not in captured["body"]
 
 
 @pytest.mark.asyncio
@@ -473,4 +488,4 @@ def test_cli_mode_finance():
 def test_cli_version_031():
     r = runner.invoke(app, ["--version"])
     assert r.exit_code == 0
-    assert "0.4.0" in r.output
+    assert "0.5.0" in r.output

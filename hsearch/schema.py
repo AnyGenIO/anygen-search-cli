@@ -177,6 +177,33 @@ SEARCH_SCHEMA: dict[str, Any] = {
                         "description": "Firecrawl: filter out URLs invalid for follow-on scrape endpoints.",
                         "cli_flag": "--ignore-invalid-urls",
                     },
+                    "safe_search": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Tavily: filter adult/unsafe content (Enterprise only).",
+                        "cli_flag": "--safe-search",
+                    },
+                    "project_id": {
+                        "type": "string",
+                        "description": "Tavily: X-Project-ID for per-project usage tracking.",
+                        "cli_flag": "--project-id",
+                    },
+                    "firecrawl_clean_content": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Firecrawl: LLM-based boilerplate cleanup (beta).",
+                        "cli_flag": "--firecrawl-clean-content",
+                    },
+                    "firecrawl_question": {
+                        "type": "string",
+                        "description": "Firecrawl: ask a question about each scraped page.",
+                        "cli_flag": "--firecrawl-question",
+                    },
+                    "highlights_query": {
+                        "type": "string",
+                        "description": "Firecrawl/Exa: relevance query for highlights extraction.",
+                        "cli_flag": "--highlights-query",
+                    },
                 },
             },
             "output_schema": {

@@ -27,6 +27,8 @@ class ExaProvider(SearchProvider):
             payload["userLocation"] = kwargs["user_location"]
         if kwargs.get("moderation"):
             payload["moderation"] = True
+        if kwargs.get("output_schema"):
+            payload["outputSchema"] = kwargs["output_schema"]
 
         contents: dict[str, Any] = {}
 
@@ -118,10 +120,7 @@ class ExaProvider(SearchProvider):
             payload["startPublishedDate"] = kwargs["start_published_date"]
         if kwargs.get("end_published_date"):
             payload["endPublishedDate"] = kwargs["end_published_date"]
-        if kwargs.get("start_crawl_date"):
-            payload["startCrawlDate"] = kwargs["start_crawl_date"]
-        if kwargs.get("end_crawl_date"):
-            payload["endCrawlDate"] = kwargs["end_crawl_date"]
+        # startCrawlDate / endCrawlDate removed from Exa API on 2026-05-01.
 
         headers = {
             "x-api-key": self.api_key or "",

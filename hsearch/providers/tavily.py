@@ -1,6 +1,7 @@
 """Tavily Search. Docs: https://docs.tavily.com/documentation/api-reference/endpoint/search"""
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from hsearch.models import SearchResult
@@ -62,6 +63,8 @@ class TavilyProvider(SearchProvider):
             payload["include_favicon"] = True
         if kwargs.get("include_usage"):
             payload["include_usage"] = True
+        if kwargs.get("safe_search"):
+            payload["safe_search"] = True
         # ---- existing optional params -------------------------------------
         inc_answer = kwargs.get("include_answer")
         if inc_answer:
@@ -82,10 +85,13 @@ class TavilyProvider(SearchProvider):
         if kwargs.get("exclude_domains"):
             payload["exclude_domains"] = kwargs["exclude_domains"]
 
-        headers = {
+        headers: dict[str, str] = {
             "Authorization": f"Bearer {self.api_key or ''}",
             "Content-Type": "application/json",
         }
+        project_id = kwargs.get("project_id") or os.environ.get("TAVILY_PROJECT")
+        if project_id:
+            headers["X-Project-ID"] = str(project_id)
         resp = await self._request("POST", ENDPOINT, headers=headers, json=payload)
         data = resp.json()
 

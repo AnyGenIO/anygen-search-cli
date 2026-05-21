@@ -15,7 +15,7 @@ Async::
     resp = await search("Python tutorial", providers=["tavily", "brave"])
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from hsearch.engine import (
     ExtractResult,

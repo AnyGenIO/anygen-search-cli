@@ -70,6 +70,9 @@ class FirecrawlProvider(SearchProvider):
             payload["includeDomains"] = kwargs["include_domains"]
         if kwargs.get("exclude_domains"):
             payload["excludeDomains"] = kwargs["exclude_domains"]
+        if kwargs.get("enterprise"):
+            ent = kwargs["enterprise"]
+            payload["enterprise"] = [ent] if isinstance(ent, str) else list(ent)
 
         # ---- scrapeOptions -------------------------------------------------
         scrape_opts: dict[str, Any] = {"onlyMainContent": True}
@@ -78,10 +81,14 @@ class FirecrawlProvider(SearchProvider):
             formats.append("markdown")
         if kwargs.get("summary"):
             formats.append("summary")
-        # NOTE: "highlights" is NOT a valid Firecrawl v2 scrape format
-        # (valid: markdown|html|rawHtml|links|images|summary|json|question|query|screenshot).
-        # Verified 2026-05-20: passing "highlights" yields 400 invalid_union.
-        # `--mode recall` sets highlights=True for Exa; we silently drop it for Firecrawl.
+        if kwargs.get("highlights"):
+            h: dict[str, Any] | str = "highlights"
+            if kwargs.get("highlights_query"):
+                h = {"type": "highlights", "query": kwargs["highlights_query"]}
+            formats.append(h)
+        if kwargs.get("question"):
+            q: dict[str, Any] | str = {"type": "question", "question": kwargs["question"]}
+            formats.append(q)
         if formats:
             scrape_opts["formats"] = formats
         if kwargs.get("lang"):
@@ -101,7 +108,25 @@ class FirecrawlProvider(SearchProvider):
                 pass
         if kwargs.get("mobile"):
             scrape_opts["mobile"] = True
-        if formats or any(k in scrape_opts for k in ("location", "timeout", "waitFor", "mobile")):
+        if kwargs.get("only_clean_content"):
+            scrape_opts["onlyCleanContent"] = True
+        if kwargs.get("max_age") is not None:
+            try:
+                scrape_opts["maxAge"] = int(kwargs["max_age"])
+            except (TypeError, ValueError):
+                pass
+        if kwargs.get("min_age") is not None:
+            try:
+                scrape_opts["minAge"] = int(kwargs["min_age"])
+            except (TypeError, ValueError):
+                pass
+        if kwargs.get("block_ads") is not None:
+            scrape_opts["blockAds"] = bool(kwargs["block_ads"])
+        if kwargs.get("remove_base64_images") is not None:
+            scrape_opts["removeBase64Images"] = bool(kwargs["remove_base64_images"])
+        if kwargs.get("proxy"):
+            scrape_opts["proxy"] = kwargs["proxy"]
+        if formats or any(k in scrape_opts for k in ("location", "timeout", "waitFor", "mobile", "onlyCleanContent", "maxAge", "minAge", "blockAds", "removeBase64Images", "proxy")):
             payload["scrapeOptions"] = scrape_opts
 
         resp = await self._request(
