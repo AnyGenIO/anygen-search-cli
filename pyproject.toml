@@ -1,6 +1,6 @@
 [project]
 name = "anygen-search-cli"
-version = "0.6.0"
+version = "0.7.0"
 description = "Unified search CLI & SDK over 6 commercial search APIs (Brave, Serper, Exa, Tavily, Firecrawl, Jina) — LLM-callable, multi-provider dedup, content extraction."
 readme = "README.md"
 requires-python = ">=3.9"

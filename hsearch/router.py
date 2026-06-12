@@ -19,6 +19,7 @@ MODE_MAP: dict[str, list[str]] = {
     "answer": ["tavily", "brave"],
     "deep": ["exa", "tavily"],
     "fast": ["exa", "tavily"],
+    "company": ["exa"],
     "finance": ["tavily", "serper", "brave"],
     "recall": ["exa", "tavily", "brave", "serper", "firecrawl", "jina"],
     "context": ["brave"],

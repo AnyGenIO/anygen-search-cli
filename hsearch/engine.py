@@ -249,6 +249,11 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     elif mode_key == "fast":
         extra["type"] = "instant"
         extra["search_depth"] = "ultra-fast"
+    elif mode_key == "company":
+        # Exa Company Search (Jan 2026): fine-tuned entity retrieval.
+        # type=auto + category=company routes to the company vertical.
+        extra["type"] = "auto"
+        extra["category"] = "company"
     elif mode_key == "finance":
         extra["topic"] = "finance"
         extra["search_depth"] = "advanced"
@@ -319,6 +324,10 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["search_depth"] = kwargs["depth"]
     if kwargs.get("exa_type"):
         extra["type"] = kwargs["exa_type"]
+    if kwargs.get("category"):
+        # Exa category filter (company | research paper | news | pdf | github |
+        # tweet | personal site | linkedin profile | financial report).
+        extra["category"] = kwargs["category"]
     if kwargs.get("include_favicon"):
         extra["include_favicon"] = True
     if kwargs.get("include_usage"):
@@ -337,6 +346,10 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["scrape_timeout"] = kwargs["firecrawl_scrape_timeout"]
     if kwargs.get("firecrawl_wait_for") is not None:
         extra["wait_for"] = kwargs["firecrawl_wait_for"]
+    if kwargs.get("firecrawl_parsers"):
+        extra["parsers"] = kwargs["firecrawl_parsers"]
+    if kwargs.get("firecrawl_redact_pii") is not None:
+        extra["redact_pii"] = kwargs["firecrawl_redact_pii"]
     if kwargs.get("jina_engine"):
         extra["engine"] = kwargs["jina_engine"]
     if kwargs.get("jina_respond_with"):
@@ -744,6 +757,118 @@ async def ground(
 def ground_sync(statement: str, **kwargs: Any) -> GroundingResponse:
     """Synchronous wrapper around :func:`ground`."""
     return asyncio.run(ground(statement, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Research (Tavily /research — async deep-research agent)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ResearchResponse:
+    """Response from Tavily Research API."""
+
+    content: str | None = None
+    sources: list[dict[str, Any]] = field(default_factory=list)
+    status: str | None = None
+    request_id: str | None = None
+    response_time: float | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if self.content is not None:
+            out["content"] = self.content
+        if self.sources:
+            out["sources"] = self.sources
+        if self.status:
+            out["status"] = self.status
+        if self.request_id:
+            out["request_id"] = self.request_id
+        if self.response_time is not None:
+            out["response_time"] = self.response_time
+        if self.error:
+            out["error"] = self.error
+        return out
+
+
+async def research(
+    input_text: str,
+    *,
+    model: str = "mini",
+    citation_format: str = "numbered",
+    output_schema: dict[str, Any] | None = None,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    poll_interval: float = 5.0,
+    timeout: float = 600.0,
+) -> ResearchResponse:
+    """Run a Tavily deep-research task and wait for the final report.
+
+    Args:
+        input_text: The research question / instruction.
+        model: "mini" (fast, narrow questions) | "pro" (deep) | "auto".
+        citation_format: numbered | mla | apa | chicago.
+        output_schema: optional JSON Schema for structured research output.
+        include_domains / exclude_domains: domain filters.
+        poll_interval: seconds between status polls.
+        timeout: overall deadline in seconds.
+
+    Returns:
+        ResearchResponse with the synthesized report content + sources.
+    """
+    try:
+        provider = get_provider("tavily")
+    except KeyError as e:
+        return ResearchResponse(error=str(e))
+    try:
+        async with provider:
+            from hsearch.providers.tavily import TavilyProvider
+
+            if not isinstance(provider, TavilyProvider):
+                return ResearchResponse(error="tavily provider not available")
+            data = await provider.research(
+                input_text,
+                model=model,
+                citation_format=citation_format,
+                output_schema=output_schema,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+                poll_interval=poll_interval,
+                timeout=timeout,
+            )
+    except TimeoutError as e:
+        return ResearchResponse(error=str(e))
+    except Exception as e:
+        return ResearchResponse(error=f"{type(e).__name__}: {e}")
+
+    status = data.get("status")
+    if (status or "").lower() in ("failed", "error", "cancelled"):
+        return ResearchResponse(
+            status=status,
+            request_id=data.get("request_id"),
+            error=str(data.get("error") or data.get("detail") or f"research {status}"),
+        )
+    content = data.get("content")
+    if isinstance(content, dict):
+        import json as _json
+
+        content = _json.dumps(content, ensure_ascii=False, indent=2)
+    sources = data.get("sources")
+    return ResearchResponse(
+        content=content if isinstance(content, str) else None,
+        sources=sources if isinstance(sources, list) else [],
+        status=status,
+        request_id=data.get("request_id"),
+        response_time=data.get("response_time")
+        if isinstance(data.get("response_time"), (int, float))
+        else None,
+    )
+
+
+def research_sync(input_text: str, **kwargs: Any) -> ResearchResponse:
+    """Synchronous wrapper around :func:`research`."""
+    return asyncio.run(research(input_text, **kwargs))
 
 
 # ---------------------------------------------------------------------------

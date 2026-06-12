@@ -26,8 +26,10 @@ from hsearch.engine import (
     answer as engine_answer,
     ground as engine_ground,
     find_similar as engine_find_similar,
+    research as engine_research,
     AnswerResponse,
     GroundingResponse,
+    ResearchResponse,
     SearchResponse,
 )
 from hsearch.extract import EXTRACT_PROVIDERS, extract_many
@@ -215,6 +217,10 @@ def search(
         None, "--exa-type",
         help="Exa type: auto | fast | instant | neural | deep-lite | deep | deep-reasoning.",
     ),
+    category: Optional[str] = typer.Option(
+        None, "--category",
+        help="Exa category filter: company | research paper | news | pdf | github | tweet | personal site | linkedin profile | financial report.",
+    ),
     include_favicon: bool = typer.Option(
         False, "--include-favicon",
         help="Tavily: return favicon URL per result.",
@@ -254,6 +260,14 @@ def search(
     firecrawl_wait_for: Optional[int] = typer.Option(
         None, "--firecrawl-wait-for",
         help="Firecrawl scrapeOptions.waitFor in milliseconds.",
+    ),
+    firecrawl_parsers: Optional[str] = typer.Option(
+        None, "--firecrawl-parsers",
+        help="Firecrawl scrapeOptions.parsers, comma-separated (e.g. 'pdf').",
+    ),
+    firecrawl_redact_pii: bool = typer.Option(
+        False, "--firecrawl-redact-pii",
+        help="Firecrawl scrapeOptions.redactPII — redact personal info in scraped content.",
     ),
     jina_engine: Optional[str] = typer.Option(
         None, "--jina-engine",
@@ -369,6 +383,7 @@ def search(
                 exact=exact,
                 depth=depth,
                 exa_type=exa_type,
+                category=category,
                 include_favicon=include_favicon,
                 include_usage=include_usage,
                 include_images=include_images,
@@ -379,6 +394,8 @@ def search(
                 ignore_invalid_urls=ignore_invalid_urls,
                 firecrawl_scrape_timeout=firecrawl_scrape_timeout,
                 firecrawl_wait_for=firecrawl_wait_for,
+                firecrawl_parsers=firecrawl_parsers,
+                firecrawl_redact_pii=firecrawl_redact_pii if firecrawl_redact_pii else None,
                 jina_engine=jina_engine,
                 jina_respond_with=jina_respond_with,
                 jina_target_selector=jina_target_selector,
@@ -559,6 +576,76 @@ def answer_cmd(
             table.add_column("URL", style="dim")
             for i, c in enumerate(resp.citations, 1):
                 table.add_row(str(i), c.title, c.url)
+            console.print(table)
+
+
+@app.command("research")
+def research_cmd(
+    input_text: str = typer.Argument(..., help="Research question / instruction."),
+    model: str = typer.Option(
+        "mini", "--model",
+        help="Tavily research model: mini (fast, narrow) | pro (deep) | auto.",
+    ),
+    citation_format: str = typer.Option(
+        "numbered", "--citation-format",
+        help="Citation style: numbered | mla | apa | chicago.",
+    ),
+    include_domains: list[str] = typer.Option(
+        None, "--site", help="Restrict research to domain(s); repeatable."
+    ),
+    exclude_domains: list[str] = typer.Option(
+        None, "--exclude", help="Exclude domain(s); repeatable."
+    ),
+    timeout: float = typer.Option(
+        600.0, "--timeout", help="Overall deadline in seconds (research is async server-side)."
+    ),
+    poll_interval: float = typer.Option(
+        5.0, "--poll-interval", help="Seconds between status polls."
+    ),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="json | markdown (auto: json when piped)."
+    ),
+) -> None:
+    """Run a Tavily deep-research task (async agent) and print the final report.
+
+    Mini-model tasks usually complete in 10-60s; pro can take several minutes.
+    """
+    resp: ResearchResponse = asyncio.run(
+        engine_research(
+            input_text,
+            model=model,
+            citation_format=citation_format,
+            include_domains=list(include_domains) if include_domains else None,
+            exclude_domains=list(exclude_domains) if exclude_domains else None,
+            poll_interval=poll_interval,
+            timeout=timeout,
+        )
+    )
+    if resp.error:
+        err_console.print(f"[red]error:[/] {resp.error}")
+        if "timeout" in resp.error.lower():
+            err_console.print(
+                "[yellow]hint:[/] research is async server-side — raise --timeout, "
+                "or use --model mini for faster narrow questions."
+            )
+        raise typer.Exit(1)
+    if fmt is None:
+        fmt = "markdown" if sys.stdout.isatty() else "json"
+    if fmt == "json":
+        import json
+
+        sys.stdout.write(json.dumps(resp.to_dict(), ensure_ascii=False, indent=2) + "\n")
+    else:
+        if resp.content:
+            console.print(Panel(resp.content, title="[bold green]Research Report[/]", border_style="green"))
+        if resp.sources:
+            table = Table(title="Sources", header_style="bold cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Title")
+            table.add_column("URL", style="dim")
+            for i, s in enumerate(resp.sources, 1):
+                if isinstance(s, dict):
+                    table.add_row(str(i), s.get("title") or "", s.get("url") or "")
             console.print(table)
 
 

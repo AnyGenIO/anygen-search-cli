@@ -17,6 +17,7 @@ MODE_CACHE_TTL_SECONDS: dict[str, int] = {
     "places": 7200,
     "code": 14400,
     "deep": 14400,
+    "company": 14400,
     "academic": 86400,
 }
 

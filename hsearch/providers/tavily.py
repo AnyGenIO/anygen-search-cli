@@ -1,6 +1,7 @@
 """Tavily Search. Docs: https://docs.tavily.com/documentation/api-reference/endpoint/search"""
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -8,6 +9,7 @@ from hsearch.models import SearchResult
 from hsearch.providers.base import SearchProvider
 
 ENDPOINT = "https://api.tavily.com/search"
+RESEARCH_ENDPOINT = "https://api.tavily.com/research"
 
 # Tavily search_depth options as of 2026-04 (added: fast, ultra-fast).
 # basic / advanced were the original two; fast / ultra-fast trade relevance for latency.
@@ -127,3 +129,86 @@ class TavilyProvider(SearchProvider):
                 )
             )
         return out
+
+    # ------------------------------------------------------------------
+    # Research API (async deep-research agent). Docs:
+    # https://docs.tavily.com/documentation/api-reference/endpoint/research
+    # ------------------------------------------------------------------
+
+    def _auth_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {
+            "Authorization": f"Bearer {self.api_key or ''}",
+            "Content-Type": "application/json",
+        }
+        project_id = os.environ.get("TAVILY_PROJECT")
+        if project_id:
+            headers["X-Project-ID"] = project_id
+        return headers
+
+    async def research_create(self, input_text: str, **kwargs: Any) -> dict[str, Any]:
+        """POST /research — create an async research task. Returns {request_id, status, ...}."""
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        payload: dict[str, Any] = {"input": input_text}
+        model = kwargs.get("model")
+        if model in ("mini", "pro", "auto"):
+            payload["model"] = model
+        if kwargs.get("output_schema"):
+            payload["output_schema"] = kwargs["output_schema"]
+        citation_format = kwargs.get("citation_format")
+        if citation_format in ("numbered", "mla", "apa", "chicago"):
+            payload["citation_format"] = citation_format
+        if kwargs.get("output_length"):
+            payload["output_length"] = kwargs["output_length"]
+        if kwargs.get("include_domains"):
+            payload["include_domains"] = kwargs["include_domains"]
+        if kwargs.get("exclude_domains"):
+            payload["exclude_domains"] = kwargs["exclude_domains"]
+        resp = await self._request(
+            "POST", RESEARCH_ENDPOINT, headers=self._auth_headers(), json=payload
+        )
+        return resp.json()
+
+    async def research_get(self, request_id: str) -> dict[str, Any]:
+        """GET /research/{id} — poll a research task's status/result."""
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        resp = await self._request(
+            "GET", f"{RESEARCH_ENDPOINT}/{request_id}", headers=self._auth_headers()
+        )
+        return resp.json()
+
+    async def research(
+        self,
+        input_text: str,
+        *,
+        poll_interval: float = 5.0,
+        timeout: float = 600.0,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Create a research task and poll until completed/failed or timeout.
+
+        Returns the final GET /research/{id} payload (contains ``content`` +
+        ``sources`` on success). Raises TimeoutError when the deadline passes.
+        """
+        created = await self.research_create(input_text, **kwargs)
+        request_id = created.get("request_id") or created.get("id")
+        if not request_id:
+            # API contract drift — surface the raw creation payload for debugging.
+            return created
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        last: dict[str, Any] = created
+        while loop.time() < deadline:
+            await asyncio.sleep(poll_interval)
+            last = await self.research_get(str(request_id))
+            status = (last.get("status") or "").lower()
+            if status in ("completed", "failed", "error", "cancelled"):
+                return last
+        raise TimeoutError(
+            f"tavily research task {request_id} still '{last.get('status')}' after {timeout:.0f}s"
+        )

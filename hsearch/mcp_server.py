@@ -12,6 +12,7 @@ from hsearch.engine import (
     answer as engine_answer,
     ground as engine_ground,
     find_similar as engine_find_similar,
+    research as engine_research,
 )
 from hsearch.providers import list_providers
 from hsearch.schema import render_schema
@@ -230,6 +231,23 @@ async def similar_tool(
     return resp.to_dict()
 
 
+async def research_tool(
+    input_text: str,
+    model: str = "mini",
+    citation_format: str = "numbered",
+    timeout: float = 600.0,
+) -> dict[str, Any]:
+    """Run a Tavily deep-research task (async agent) and return the final report with sources.
+
+    model: mini (fast, narrow questions) | pro (deep, multi-step) | auto.
+    Mini tasks usually complete in 10-60s; pro can take several minutes.
+    """
+    resp = await engine_research(
+        input_text, model=model, citation_format=citation_format, timeout=timeout
+    )
+    return resp.to_dict()
+
+
 def build_server() -> Any:
     """Build a FastMCP server with hsearch tools registered."""
     if FastMCP is None:
@@ -243,6 +261,7 @@ def build_server() -> Any:
     server.tool(name="answer")(answer_tool)
     server.tool(name="ground")(ground_tool)
     server.tool(name="similar")(similar_tool)
+    server.tool(name="research")(research_tool)
     server.tool(name="providers")(providers)
     server.tool(name="schema")(schema)
     return server

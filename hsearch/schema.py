@@ -379,6 +379,52 @@ SEARCH_SCHEMA: dict[str, Any] = {
             ],
         },
         {
+            "name": "research",
+            "description": "Run a Tavily deep-research task (async server-side agent). Returns a synthesized multi-source report with citations. mini model: 10-60s for narrow questions; pro: several minutes for deep multi-step research.",
+            "cli_usage": "hsearch research <input_text> [options]",
+            "parameters": {
+                "type": "object",
+                "required": ["input_text"],
+                "properties": {
+                    "input_text": {
+                        "type": "string",
+                        "description": "The research question or instruction.",
+                        "cli_flag": "positional argument",
+                    },
+                    "model": {
+                        "type": "string",
+                        "enum": ["mini", "pro", "auto"],
+                        "default": "mini",
+                        "description": "Research agent model: mini (fast, narrow) | pro (deep) | auto.",
+                        "cli_flag": "--model",
+                    },
+                    "citation_format": {
+                        "type": "string",
+                        "enum": ["numbered", "mla", "apa", "chicago"],
+                        "default": "numbered",
+                        "description": "Citation style in the report.",
+                        "cli_flag": "--citation-format",
+                    },
+                    "timeout": {
+                        "type": "number",
+                        "default": 600,
+                        "description": "Overall deadline in seconds.",
+                        "cli_flag": "--timeout",
+                    },
+                },
+            },
+            "examples": [
+                {
+                    "description": "Quick narrow research question",
+                    "command": 'hsearch research "AST SpaceMobile 2026 satellite launch plan" --model mini',
+                },
+                {
+                    "description": "Deep research with APA citations",
+                    "command": 'hsearch research "solid state battery commercialization timeline" --model pro --citation-format apa -f json',
+                },
+            ],
+        },
+        {
             "name": "ground",
             "description": "Fact-check a statement using Jina's Grounding API (g.jina.ai). Returns factuality score, boolean verdict, reasoning, and web references.",
             "cli_usage": "hsearch ground <statement> [options]",

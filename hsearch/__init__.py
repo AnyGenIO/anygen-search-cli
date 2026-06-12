@@ -15,12 +15,13 @@ Async::
     resp = await search("Python tutorial", providers=["tavily", "brave"])
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 from hsearch.engine import (
     AnswerResponse,
     ExtractResult,
     GroundingResponse,
+    ResearchResponse,
     SearchResponse,
     answer,
     answer_sync,
@@ -30,6 +31,8 @@ from hsearch.engine import (
     find_similar_sync,
     ground,
     ground_sync,
+    research,
+    research_sync,
     search,
     search_sync,
 )
@@ -41,6 +44,7 @@ __all__ = [
     "ExtractResult",
     "Filters",
     "GroundingResponse",
+    "ResearchResponse",
     "SearchResponse",
     "SearchResult",
     "__version__",
@@ -52,6 +56,8 @@ __all__ = [
     "find_similar_sync",
     "ground",
     "ground_sync",
+    "research",
+    "research_sync",
     "search",
     "search_sync",
 ]

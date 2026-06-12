@@ -4,6 +4,45 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.7.0] — 2026-06-12
+
+Provider drift wave (2026-05/06): Tavily Research API, Exa Company Search,
+Firecrawl v2.5 scrapeOptions.
+
+### Added
+- **`hsearch research "question" --model mini|pro|auto`** — new subcommand backed
+  by Tavily Research API (async deep-research agent). Creates a research request,
+  polls until completion, renders a cited report + Sources table. Flags:
+  `--timeout`, `--poll-interval`, `--format json|markdown|table`.
+  Live-verified: mini model answers in ~10-60s with numbered citations.
+- **`--mode company`** — Exa Company Search vertical (`type=auto` +
+  `category=company`, Jan 2026 revamp). Returns company entities (homepage URLs),
+  cache TTL 4h.
+- **`--category <name>`** — generic Exa category filter exposed on `search`
+  (pdf / github / company / research paper / financial report / news / tweet /
+  personal site / linkedin profile).
+- **`--firecrawl-parsers pdf`** — Firecrawl v2.5 `scrapeOptions.parsers` for PDF
+  parsing control.
+- **`--firecrawl-redact-pii`** — Firecrawl `scrapeOptions.redactPII` (beta).
+- **SDK**: `research()` / `research_sync()` / `ResearchResponse` exported from
+  `hsearch`.
+- **MCP server**: new `research` tool; `search` tool gains `category` param.
+- **Schema**: `hsearch schema` documents the `research` subcommand + new params.
+
+### Changed
+- Version bumped to `0.7.0` (pyproject + `__init__` + User-Agent).
+- Tests: 221 passing (23 new covering research polling/timeout/enum validation,
+  company mode routing, category plumbing, Firecrawl parsers/redactPII, MCP +
+  schema sync).
+
+## [0.6.0] — 2026-05-21 *(retroactive entry)*
+
+RRF ranking, SERP feature extraction (Serper answerBox/KG/PAA, Brave infobox/FAQ),
+provider fallback chains, aggregated answers, broadened mode routing,
+`--fanout-timeout`; later commits added `hsearch answer` (Exa /answer),
+`hsearch ground` (Jina g.jina.ai), `hsearch similar` (Exa /findSimilar),
+`--mode context` (Brave LLM Context), ground timeout fix (`HSEARCH_GROUND_TIMEOUT`).
+
 ## [0.5.0] — 2026-05-21
 
 API alignment release: fixes deprecated Exa parameters, adds new Firecrawl/Tavily

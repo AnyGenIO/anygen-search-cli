@@ -5,8 +5,8 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-113%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-221%20passing-brightgreen.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -139,6 +139,15 @@ That's it — the LLM reads the schema and figures out the rest.
 ## Quick recipes
 
 ```bash
+# NEW v0.7.0 — deep research agent (Tavily Research API): cited report in 10-60s
+hsearch research "What rockets will AST SpaceMobile use in 2026?" --model mini
+
+# NEW v0.7.0 — company entity search (Exa Company vertical)
+hsearch search "AI defense tech startups" --mode company --top 5
+
+# NEW v0.7.0 — Exa category filter (pdf / github / financial report / ...)
+hsearch search "Aurora Innovation investor presentation" --provider exa --category pdf
+
 # Default search (uses Tavily if configured)
 hsearch search "open source RAG frameworks 2026"
 

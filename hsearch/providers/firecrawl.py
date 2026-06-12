@@ -126,7 +126,15 @@ class FirecrawlProvider(SearchProvider):
             scrape_opts["removeBase64Images"] = bool(kwargs["remove_base64_images"])
         if kwargs.get("proxy"):
             scrape_opts["proxy"] = kwargs["proxy"]
-        if formats or any(k in scrape_opts for k in ("location", "timeout", "waitFor", "mobile", "onlyCleanContent", "maxAge", "minAge", "blockAds", "removeBase64Images", "proxy")):
+        if kwargs.get("parsers"):
+            # e.g. ["pdf"] — enables PDF parsing in scraped results (v2.5).
+            parsers = kwargs["parsers"]
+            if isinstance(parsers, str):
+                parsers = [p.strip() for p in parsers.split(",") if p.strip()]
+            scrape_opts["parsers"] = list(parsers)
+        if kwargs.get("redact_pii") is not None:
+            scrape_opts["redactPII"] = bool(kwargs["redact_pii"])
+        if formats or any(k in scrape_opts for k in ("location", "timeout", "waitFor", "mobile", "onlyCleanContent", "maxAge", "minAge", "blockAds", "removeBase64Images", "proxy", "parsers", "redactPII")):
             payload["scrapeOptions"] = scrape_opts
 
         resp = await self._request(
