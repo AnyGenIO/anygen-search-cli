@@ -10,16 +10,21 @@ from hsearch.providers.base import SearchProvider
 
 ENDPOINT = "https://api.tavily.com/search"
 RESEARCH_ENDPOINT = "https://api.tavily.com/research"
+EXTRACT_ENDPOINT = "https://api.tavily.com/extract"
 
 # Tavily search_depth options as of 2026-04 (added: fast, ultra-fast).
 # basic / advanced were the original two; fast / ultra-fast trade relevance for latency.
 _VALID_DEPTHS = {"basic", "advanced", "fast", "ultra-fast"}
 _VALID_TOPICS = {"general", "news", "finance"}
+# Tavily extract endpoint options.
+_VALID_EXTRACT_DEPTHS = {"basic", "advanced"}
+_VALID_EXTRACT_FORMATS = {"markdown", "text"}
 
 
 class TavilyProvider(SearchProvider):
     name = "tavily"
     requires_env = ["TAVILY_API_KEY"]
+    supports_extract = True
 
     # Last raw response (so callers like `--answer` can grab tavily's answer field).
     _last_answer: str | None = None
@@ -212,3 +217,49 @@ class TavilyProvider(SearchProvider):
         raise TimeoutError(
             f"tavily research task {request_id} still '{last.get('status')}' after {timeout:.0f}s"
         )
+
+    # ------------------------------------------------------------------
+    # Extract API (clean page content + optional query-based reranking).
+    # Docs: https://docs.tavily.com/documentation/api-reference/endpoint/extract
+    # ------------------------------------------------------------------
+
+    async def extract_with_options(self, url: str, **kwargs: Any) -> str | None:
+        """POST /extract — return clean page content for a single URL.
+
+        Supports ``extract_depth`` (basic|advanced — advanced retrieves tables /
+        embedded content), ``format`` (markdown|text), and ``query`` (rerank the
+        extracted chunks by relevance to this intent).
+        """
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        payload: dict[str, Any] = {"urls": [url]}
+        depth = kwargs.get("extract_depth")
+        if depth in _VALID_EXTRACT_DEPTHS:
+            payload["extract_depth"] = depth
+        fmt = kwargs.get("format")
+        if fmt in _VALID_EXTRACT_FORMATS:
+            payload["format"] = fmt
+        if kwargs.get("query"):
+            payload["query"] = kwargs["query"]
+        if kwargs.get("include_images"):
+            payload["include_images"] = True
+        if kwargs.get("include_favicon"):
+            payload["include_favicon"] = True
+        resp = await self._request(
+            "POST", EXTRACT_ENDPOINT, headers=self._auth_headers(), json=payload
+        )
+        data = resp.json()
+        results = data.get("results") or []
+        if not results or not isinstance(results, list):
+            return None
+        first = results[0]
+        if not isinstance(first, dict):
+            return None
+        content = first.get("raw_content") or first.get("content")
+        return content if isinstance(content, str) and content else None
+
+    async def _extract(self, url: str) -> str | None:
+        """Default extract hook — clean markdown via Tavily /extract (basic depth)."""
+        return await self.extract_with_options(url, extract_depth="basic", format="markdown")

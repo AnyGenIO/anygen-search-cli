@@ -350,6 +350,14 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["parsers"] = kwargs["firecrawl_parsers"]
     if kwargs.get("firecrawl_redact_pii") is not None:
         extra["redact_pii"] = kwargs["firecrawl_redact_pii"]
+    if kwargs.get("firecrawl_store_in_cache") is not None:
+        extra["store_in_cache"] = kwargs["firecrawl_store_in_cache"]
+    if kwargs.get("firecrawl_lockdown") is not None:
+        extra["lockdown"] = kwargs["firecrawl_lockdown"]
+    if kwargs.get("firecrawl_zero_data_retention") is not None:
+        extra["zero_data_retention"] = kwargs["firecrawl_zero_data_retention"]
+    if kwargs.get("firecrawl_skip_tls_verification") is not None:
+        extra["skip_tls_verification"] = kwargs["firecrawl_skip_tls_verification"]
     if kwargs.get("jina_engine"):
         extra["engine"] = kwargs["jina_engine"]
     if kwargs.get("jina_respond_with"):
@@ -571,18 +579,22 @@ async def extract_urls(
     urls: list[str],
     provider: str = "jina",
     concurrency: int = 4,
+    **options: Any,
 ) -> list[ExtractResult]:
     """Extract clean text/markdown content from URLs.
 
     Args:
         urls: URLs to extract content from.
-        provider: Extraction provider (jina or firecrawl).
+        provider: Extraction provider (jina, firecrawl, or tavily).
         concurrency: Max parallel requests.
+        **options: Provider-specific extras. Tavily honors ``query`` (rerank
+            chunks by relevance), ``extract_depth`` (basic|advanced), and
+            ``format`` (markdown|text).
 
     Returns:
         List of ExtractResult with url, content, and error fields.
     """
-    outcomes = await extract_many(urls, provider=provider, concurrency=concurrency)
+    outcomes = await extract_many(urls, provider=provider, concurrency=concurrency, **options)
     return [ExtractResult(url=u, content=c, error=e) for u, c, e in outcomes]
 
 
@@ -590,9 +602,10 @@ def extract_urls_sync(
     urls: list[str],
     provider: str = "jina",
     concurrency: int = 4,
+    **options: Any,
 ) -> list[ExtractResult]:
     """Synchronous wrapper around :func:`extract_urls`."""
-    return asyncio.run(extract_urls(urls, provider=provider, concurrency=concurrency))
+    return asyncio.run(extract_urls(urls, provider=provider, concurrency=concurrency, **options))
 
 
 # ---------------------------------------------------------------------------
@@ -869,6 +882,126 @@ async def research(
 def research_sync(input_text: str, **kwargs: Any) -> ResearchResponse:
     """Synchronous wrapper around :func:`research`."""
     return asyncio.run(research(input_text, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Agent (Exa /agent/runs — async deep-research / list-building / enrichment)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AgentResponse:
+    """Response from the Exa Agent API (async high-compute research agent)."""
+
+    text: str | None = None
+    structured: Any | None = None
+    grounding: list[Any] = field(default_factory=list)
+    status: str | None = None
+    run_id: str | None = None
+    cost: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if self.text is not None:
+            out["text"] = self.text
+        if self.structured is not None:
+            out["structured"] = self.structured
+        if self.grounding:
+            out["grounding"] = self.grounding
+        if self.status:
+            out["status"] = self.status
+        if self.run_id:
+            out["run_id"] = self.run_id
+        if self.cost:
+            out["cost"] = self.cost
+        if self.usage:
+            out["usage"] = self.usage
+        if self.error:
+            out["error"] = self.error
+        return out
+
+
+async def agent(
+    query: str,
+    *,
+    effort: str = "auto",
+    output_schema: dict[str, Any] | None = None,
+    input_data: list[Any] | None = None,
+    input_exclusion: list[Any] | None = None,
+    previous_run_id: str | None = None,
+    data_sources: list[Any] | None = None,
+    poll_interval: float = 3.0,
+    timeout: float = 600.0,
+) -> AgentResponse:
+    """Run an Exa Agent task (async deep research / list building / enrichment).
+
+    Args:
+        query: Natural-language research / list-building instruction.
+        effort: Cost/reasoning tier — minimal|low|medium|high|xhigh|auto.
+        output_schema: optional JSON Schema → schema-validated structured output.
+        input_data: rows to process/enrich (each a dict of fields).
+        input_exclusion: records/entities to avoid.
+        previous_run_id: continue from a completed run (e.g. "find 10 more").
+        data_sources: Exa Connect partner data sources (beta).
+        poll_interval: seconds between status polls.
+        timeout: overall deadline in seconds.
+
+    Returns:
+        AgentResponse with the final text, structured output, grounding, and cost.
+    """
+    try:
+        provider = get_provider("exa")
+    except KeyError as e:
+        return AgentResponse(error=str(e))
+    try:
+        async with provider:
+            from hsearch.providers.exa import ExaProvider
+
+            if not isinstance(provider, ExaProvider):
+                return AgentResponse(error="exa provider not available")
+            data = await provider.agent_run(
+                query,
+                effort=effort,
+                output_schema=output_schema,
+                input_data=input_data,
+                input_exclusion=input_exclusion,
+                previous_run_id=previous_run_id,
+                data_sources=data_sources,
+                poll_interval=poll_interval,
+                timeout=timeout,
+            )
+    except TimeoutError as e:
+        return AgentResponse(error=str(e))
+    except Exception as e:
+        return AgentResponse(error=f"{type(e).__name__}: {e}")
+
+    status = data.get("status")
+    if (status or "").lower() in ("failed", "error", "cancelled", "canceled"):
+        return AgentResponse(
+            status=status,
+            run_id=data.get("id"),
+            error=str(data.get("stopReason") or data.get("error") or f"agent run {status}"),
+        )
+    output = data.get("output") or {}
+    text = output.get("text") if isinstance(output, dict) else None
+    structured = output.get("structured") if isinstance(output, dict) else None
+    grounding = output.get("grounding") if isinstance(output, dict) else None
+    return AgentResponse(
+        text=text if isinstance(text, str) and text else None,
+        structured=structured,
+        grounding=grounding if isinstance(grounding, list) else [],
+        status=status,
+        run_id=data.get("id"),
+        cost=data.get("costDollars") if isinstance(data.get("costDollars"), dict) else None,
+        usage=data.get("usage") if isinstance(data.get("usage"), dict) else None,
+    )
+
+
+def agent_sync(query: str, **kwargs: Any) -> AgentResponse:
+    """Synchronous wrapper around :func:`agent`."""
+    return asyncio.run(agent(query, **kwargs))
 
 
 # ---------------------------------------------------------------------------

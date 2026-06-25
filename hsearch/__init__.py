@@ -15,14 +15,17 @@ Async::
     resp = await search("Python tutorial", providers=["tavily", "brave"])
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 from hsearch.engine import (
+    AgentResponse,
     AnswerResponse,
     ExtractResult,
     GroundingResponse,
     ResearchResponse,
     SearchResponse,
+    agent,
+    agent_sync,
     answer,
     answer_sync,
     extract_urls,
@@ -40,6 +43,7 @@ from hsearch.filters import Filters
 from hsearch.models import SearchResult
 
 __all__ = [
+    "AgentResponse",
     "AnswerResponse",
     "ExtractResult",
     "Filters",
@@ -48,6 +52,8 @@ __all__ = [
     "SearchResponse",
     "SearchResult",
     "__version__",
+    "agent",
+    "agent_sync",
     "answer",
     "answer_sync",
     "extract_urls",

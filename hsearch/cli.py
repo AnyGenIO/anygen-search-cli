@@ -27,6 +27,8 @@ from hsearch.engine import (
     ground as engine_ground,
     find_similar as engine_find_similar,
     research as engine_research,
+    agent as engine_agent,
+    AgentResponse,
     AnswerResponse,
     GroundingResponse,
     ResearchResponse,
@@ -329,6 +331,22 @@ def search(
         None, "--highlights-query",
         help="Firecrawl/Exa: query string for highlights relevance.",
     ),
+    firecrawl_store_in_cache: Optional[bool] = typer.Option(
+        None, "--firecrawl-store-in-cache/--firecrawl-no-store-in-cache",
+        help="Firecrawl scrapeOptions.storeInCache — cache scraped pages for reuse.",
+    ),
+    firecrawl_lockdown: Optional[bool] = typer.Option(
+        None, "--firecrawl-lockdown/--firecrawl-no-lockdown",
+        help="Firecrawl scrapeOptions.lockdown — restricted/hardened scrape mode.",
+    ),
+    firecrawl_zero_data_retention: Optional[bool] = typer.Option(
+        None, "--firecrawl-zdr/--firecrawl-no-zdr",
+        help="Firecrawl scrapeOptions.zeroDataRetention — do not persist scraped data.",
+    ),
+    firecrawl_skip_tls_verification: Optional[bool] = typer.Option(
+        None, "--firecrawl-skip-tls/--firecrawl-no-skip-tls",
+        help="Firecrawl scrapeOptions.skipTlsVerification — ignore TLS cert errors.",
+    ),
 ) -> None:
     """Run a search across one, many, or all providers."""
     if agent:
@@ -411,6 +429,10 @@ def search(
                 firecrawl_proxy=firecrawl_proxy,
                 firecrawl_question=firecrawl_question,
                 highlights_query=highlights_query,
+                firecrawl_store_in_cache=firecrawl_store_in_cache,
+                firecrawl_lockdown=firecrawl_lockdown,
+                firecrawl_zero_data_retention=firecrawl_zero_data_retention,
+                firecrawl_skip_tls_verification=firecrawl_skip_tls_verification,
             )
         )
     except ValueError as e:
@@ -451,17 +473,42 @@ def search(
 def extract(
     urls: list[str] = typer.Argument(..., help="One or more URLs to extract."),
     provider: str = typer.Option(
-        "jina", "--provider", "-p", help="jina | firecrawl"
+        "jina", "--provider", "-p", help="jina | firecrawl | tavily"
     ),
     fmt: Optional[str] = typer.Option(
         None, "--format", "-f", help="markdown | json (auto: json when piped, markdown in terminal)"
     ),
     concurrency: int = typer.Option(4, "--concurrency", "-c", help="Parallel requests."),
+    query: Optional[str] = typer.Option(
+        None, "--query", help="Tavily: rerank extracted chunks by relevance to this intent."
+    ),
+    extract_depth: Optional[str] = typer.Option(
+        None, "--extract-depth",
+        help="Tavily: basic | advanced (advanced retrieves tables/embedded content).",
+    ),
+    extract_format: Optional[str] = typer.Option(
+        None, "--extract-format",
+        help="Tavily: content format — markdown | text.",
+    ),
 ) -> None:
-    """Fetch one or more URLs and return clean markdown/text."""
+    """Fetch one or more URLs and return clean markdown/text.
+
+    The ``tavily`` provider additionally supports ``--query`` (relevance
+    reranking), ``--extract-depth``, and ``--extract-format``.
+    """
     if fmt is None:
         fmt = "markdown" if sys.stdout.isatty() else "json"
-    outcomes = asyncio.run(extract_many(urls, provider=provider, concurrency=concurrency))
+    options: dict = {}
+    if provider == "tavily":
+        if query:
+            options["query"] = query
+        if extract_depth:
+            options["extract_depth"] = extract_depth
+        if extract_format:
+            options["format"] = extract_format
+    outcomes = asyncio.run(
+        extract_many(urls, provider=provider, concurrency=concurrency, **options)
+    )
     if fmt == "json":
         import json
 
@@ -647,6 +694,92 @@ def research_cmd(
                 if isinstance(s, dict):
                     table.add_row(str(i), s.get("title") or "", s.get("url") or "")
             console.print(table)
+
+
+@app.command("agent")
+def agent_cmd(
+    query: str = typer.Argument(..., help="Research / list-building / enrichment instruction."),
+    effort: str = typer.Option(
+        "auto", "--effort",
+        help="Cost/reasoning tier: minimal | low | medium | high | xhigh | auto.",
+    ),
+    schema_file: Optional[str] = typer.Option(
+        None, "--schema-file",
+        help="Path to a JSON Schema file → schema-validated structured output.",
+    ),
+    previous_run_id: Optional[str] = typer.Option(
+        None, "--previous-run-id",
+        help="Continue from a completed run (e.g. 'find 10 more results').",
+    ),
+    timeout: float = typer.Option(
+        600.0, "--timeout", help="Overall deadline in seconds (Agent runs are async server-side)."
+    ),
+    poll_interval: float = typer.Option(
+        3.0, "--poll-interval", help="Seconds between status polls."
+    ),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="json | markdown (auto: json when piped)."
+    ),
+) -> None:
+    """Run an Exa Agent task (async high-compute research / list-building / enrichment).
+
+    The Agent handles multi-hop workflows that need many structured fields and
+    complex reasoning — e.g. "find companies that raised a Series A, then find
+    their decision makers". minimal/low effort answer narrow questions in
+    seconds; high/xhigh deep tasks can take minutes.
+    """
+    output_schema = None
+    if schema_file:
+        import json as _json
+
+        try:
+            with open(schema_file, encoding="utf-8") as fh:
+                output_schema = _json.load(fh)
+        except (OSError, ValueError) as e:
+            err_console.print(f"[red]Cannot read --schema-file:[/] {e}")
+            raise typer.Exit(2)
+
+    resp: AgentResponse = asyncio.run(
+        engine_agent(
+            query,
+            effort=effort,
+            output_schema=output_schema,
+            previous_run_id=previous_run_id,
+            poll_interval=poll_interval,
+            timeout=timeout,
+        )
+    )
+    if resp.error:
+        err_console.print(f"[red]error:[/] {resp.error}")
+        if "timeout" in resp.error.lower():
+            err_console.print(
+                "[yellow]hint:[/] Agent runs are async server-side — raise --timeout, "
+                "or lower --effort (minimal/low) for faster narrow tasks."
+            )
+        raise typer.Exit(1)
+    if fmt is None:
+        fmt = "markdown" if sys.stdout.isatty() else "json"
+    if fmt == "json":
+        import json
+
+        sys.stdout.write(json.dumps(resp.to_dict(), ensure_ascii=False, indent=2) + "\n")
+    else:
+        if resp.structured is not None:
+            import json as _json
+
+            console.print(
+                Panel(
+                    _json.dumps(resp.structured, ensure_ascii=False, indent=2),
+                    title="[bold green]Structured Output[/]",
+                    border_style="green",
+                )
+            )
+        elif resp.text:
+            console.print(
+                Panel(resp.text, title="[bold green]Agent Report[/]", border_style="green")
+            )
+        if resp.cost:
+            console.print(f"[dim]cost: ${resp.cost.get('total', 0)} | run_id: {resp.run_id}[/]")
 
 
 @app.command("ground")

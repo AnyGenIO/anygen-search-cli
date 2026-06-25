@@ -5,8 +5,8 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-221%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-245%20passing-brightgreen.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -139,6 +139,17 @@ That's it — the LLM reads the schema and figures out the rest.
 ## Quick recipes
 
 ```bash
+# NEW v0.8.0 — Exa Agent: async deep-research / list-building / enrichment agent
+hsearch agent "What is Rocket Lab's ticker and business?" --effort minimal
+# structured list building with a JSON Schema → output.structured
+hsearch agent "Find 10 AI infra companies that raised a Series A in 6mo" --schema-file schema.json -f json
+
+# NEW v0.8.0 — Tavily Extract as a third extractor, with relevance reranking
+hsearch extract "https://en.wikipedia.org/wiki/Rocket_Lab" --provider tavily --query "Neutron rocket" --extract-depth advanced
+
+# NEW v0.8.0 — Firecrawl scrape-control flags
+hsearch search "openai" --provider firecrawl --firecrawl-store-in-cache --firecrawl-skip-tls --top 3
+
 # NEW v0.7.0 — deep research agent (Tavily Research API): cited report in 10-60s
 hsearch research "What rockets will AST SpaceMobile use in 2026?" --model mini
 

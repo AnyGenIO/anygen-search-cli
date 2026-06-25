@@ -318,9 +318,9 @@ SEARCH_SCHEMA: dict[str, Any] = {
                     },
                     "provider": {
                         "type": "string",
-                        "enum": ["jina", "firecrawl"],
+                        "enum": ["jina", "firecrawl", "tavily"],
                         "default": "jina",
-                        "description": "Extraction provider.",
+                        "description": "Extraction provider. tavily adds --query relevance reranking + --extract-depth.",
                         "cli_flag": "--provider / -p",
                     },
                     "format": {
@@ -517,6 +517,67 @@ SEARCH_SCHEMA: dict[str, Any] = {
             ],
         },
         {
+            "name": "agent",
+            "description": (
+                "Run an Exa Agent task (async high-compute deep research / list-building / "
+                "enrichment). Handles multi-hop workflows needing many structured fields and "
+                "complex reasoning. minimal/low effort: seconds for narrow questions; high/xhigh: "
+                "minutes for deep multi-step tasks. Returns text, structured output, grounding, and cost."
+            ),
+            "cli_usage": "hsearch agent <query> [options]",
+            "parameters": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Research / list-building / enrichment instruction.",
+                        "cli_flag": "positional argument",
+                    },
+                    "effort": {
+                        "type": "string",
+                        "enum": ["minimal", "low", "medium", "high", "xhigh", "auto"],
+                        "default": "auto",
+                        "description": "Cost/reasoning tier. Lower = faster/cheaper.",
+                        "cli_flag": "--effort",
+                    },
+                    "schema_file": {
+                        "type": "string",
+                        "description": "Path to a JSON Schema file → schema-validated structured output.",
+                        "cli_flag": "--schema-file",
+                    },
+                    "previous_run_id": {
+                        "type": "string",
+                        "description": "Continue from a completed run (e.g. 'find 10 more').",
+                        "cli_flag": "--previous-run-id",
+                    },
+                    "timeout": {
+                        "type": "number",
+                        "default": 600,
+                        "description": "Overall deadline in seconds.",
+                        "cli_flag": "--timeout",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["json", "markdown"],
+                        "default": "json",
+                        "description": "Output format.",
+                        "cli_flag": "--format / -f",
+                    },
+                },
+            },
+            "examples": [
+                {
+                    "description": "Deep narrow research question",
+                    "command": 'hsearch agent "What is AST SpaceMobile\'s ticker and business?" --effort minimal',
+                },
+                {
+                    "description": "Structured list building with a JSON Schema",
+                    "command": 'hsearch agent "Find 10 AI infra companies that raised a Series A in the last 6 months" --schema-file schema.json -f json',
+                },
+            ],
+        },
+        {
             "name": "providers",
             "description": "List all providers and their configuration status (which API keys are set).",
             "cli_usage": "hsearch providers",
@@ -555,6 +616,8 @@ SEARCH_SCHEMA: dict[str, Any] = {
         "Use 'hsearch ground' to fact-check claims against the live web (powered by Jina g.jina.ai).",
         "Use 'hsearch similar' to find pages semantically related to a URL (powered by Exa /findSimilar).",
         "Use --mode context for Brave LLM Context endpoint — pre-extracted grounding snippets for RAG.",
+        "Use 'hsearch agent' for Exa Agent (async deep research / list-building / enrichment) — pass --schema-file for structured JSON output and --effort to trade cost vs depth.",
+        "Use 'hsearch extract --provider tavily --query <intent>' to extract a page with relevance-reranked chunks (also --extract-depth advanced for tables/embedded content).",
     ],
 }
 

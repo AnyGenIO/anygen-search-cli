@@ -1,6 +1,7 @@
 """Exa neural search. Docs: https://exa.ai/docs/reference/search"""
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from hsearch.models import SearchResult
@@ -9,6 +10,14 @@ from hsearch.providers.base import SearchProvider
 SEARCH_ENDPOINT = "https://api.exa.ai/search"
 ANSWER_ENDPOINT = "https://api.exa.ai/answer"
 FIND_SIMILAR_ENDPOINT = "https://api.exa.ai/findSimilar"
+# Exa Agent API (June 2026) — async, high-compute deep-research / list-building
+# / enrichment agent. Docs: https://exa.ai/docs/reference/agent-api-guide
+AGENT_ENDPOINT = "https://api.exa.ai/agent/runs"
+
+# Cost/reasoning effort tiers accepted by the Agent API (AgentEffort enum).
+_VALID_EFFORTS = {"minimal", "low", "medium", "high", "xhigh", "auto"}
+# Terminal run statuses (lifecycle: queued → running → completed|failed|cancelled).
+_AGENT_TERMINAL = {"completed", "failed", "cancelled", "canceled", "error"}
 
 
 class ExaProvider(SearchProvider):
@@ -157,6 +166,97 @@ class ExaProvider(SearchProvider):
                 )
             )
         return out
+
+    # ------------------------------------------------------------------
+    # Agent API (async, high-compute deep-research / list-building agent).
+    # Docs: https://exa.ai/docs/reference/agent-api-guide
+    # ------------------------------------------------------------------
+
+    def _agent_headers(self) -> dict[str, str]:
+        return {
+            "x-api-key": self.api_key or "",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+    async def agent_create(self, query: str, **kwargs: Any) -> dict[str, Any]:
+        """POST /agent/runs — create an async Agent run. Returns the run object.
+
+        Body params (validated): query (required), effort (AgentEffort enum),
+        outputSchema (JSON Schema → structured output), input (data rows /
+        exclusions), previousRunId (continue from a completed run), dataSources
+        (Connect partners, beta).
+        """
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        payload: dict[str, Any] = {"query": query}
+        effort = kwargs.get("effort")
+        if effort in _VALID_EFFORTS:
+            payload["effort"] = effort
+        if kwargs.get("output_schema"):
+            payload["outputSchema"] = kwargs["output_schema"]
+        if kwargs.get("input_data") is not None or kwargs.get("input_exclusion") is not None:
+            inp: dict[str, Any] = {}
+            if kwargs.get("input_data") is not None:
+                inp["data"] = kwargs["input_data"]
+            if kwargs.get("input_exclusion") is not None:
+                inp["exclusion"] = kwargs["input_exclusion"]
+            if inp:
+                payload["input"] = inp
+        if kwargs.get("previous_run_id"):
+            payload["previousRunId"] = kwargs["previous_run_id"]
+        if kwargs.get("data_sources"):
+            payload["dataSources"] = kwargs["data_sources"]
+        resp = await self._request(
+            "POST", AGENT_ENDPOINT, headers=self._agent_headers(), json=payload
+        )
+        return resp.json()
+
+    async def agent_get(self, run_id: str) -> dict[str, Any]:
+        """GET /agent/runs/{id} — retrieve an Agent run's status/output."""
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        resp = await self._request(
+            "GET", f"{AGENT_ENDPOINT}/{run_id}", headers=self._agent_headers()
+        )
+        return resp.json()
+
+    async def agent_run(
+        self,
+        query: str,
+        *,
+        poll_interval: float = 3.0,
+        timeout: float = 600.0,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Create an Agent run and poll until it reaches a terminal status.
+
+        Returns the final GET /agent/runs/{id} payload (contains ``output`` with
+        ``text``/``structured``/``grounding`` + ``costDollars``). Raises
+        TimeoutError when the deadline passes.
+        """
+        created = await self.agent_create(query, **kwargs)
+        run_id = created.get("id")
+        status = (created.get("status") or "").lower()
+        # If the create call already returned a terminal status, return as-is.
+        if not run_id or status in _AGENT_TERMINAL:
+            return created
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        last: dict[str, Any] = created
+        while loop.time() < deadline:
+            await asyncio.sleep(poll_interval)
+            last = await self.agent_get(str(run_id))
+            status = (last.get("status") or "").lower()
+            if status in _AGENT_TERMINAL:
+                return last
+        raise TimeoutError(
+            f"exa agent run {run_id} still '{last.get('status')}' after {timeout:.0f}s"
+        )
 
     async def answer(self, query: str, **kwargs: Any) -> dict[str, Any]:
         """Call Exa /answer endpoint — returns LLM-generated answer with citations."""

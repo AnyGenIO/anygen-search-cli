@@ -4,6 +4,46 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.8.0] — 2026-06-25
+
+Provider drift wave (2026-06): Exa Agent API (June 2026 launch), Tavily Extract
+endpoint, Firecrawl scrape-control flags.
+
+### Added
+- **`hsearch agent "instruction" [--effort minimal|low|medium|high|xhigh|auto]`**
+  — new subcommand backed by the Exa Agent API (`POST /agent/runs`, async
+  high-compute deep-research / list-building / enrichment agent). Creates a run,
+  polls `GET /agent/runs/{id}` until terminal, renders the text or schema-validated
+  structured output + cost. Flags: `--schema-file` (JSON Schema → structured
+  output), `--previous-run-id` (continue a completed run), `--timeout`,
+  `--poll-interval`, `--format json|markdown`. Live-verified: minimal effort
+  answered a narrow question in ~9s, cost $0.012.
+- **`hsearch extract --provider tavily`** — Tavily Extract endpoint
+  (`POST /extract`) as a third extraction provider alongside jina/firecrawl.
+  Adds `--query` (rerank extracted chunks by relevance to an intent),
+  `--extract-depth basic|advanced` (advanced retrieves tables/embedded content),
+  and `--extract-format markdown|text`. Live-verified: query reranking surfaces
+  the most relevant passage first.
+- **Firecrawl scrape-control flags** — `--firecrawl-store-in-cache` (cache pages
+  for reuse), `--firecrawl-lockdown` (hardened scrape mode),
+  `--firecrawl-zdr` (zero data retention), `--firecrawl-skip-tls` (ignore TLS
+  cert errors). All map onto `scrapeOptions`.
+- **SDK**: `agent()` / `agent_sync()` / `AgentResponse` exported from `hsearch`.
+- **MCP server**: new `agent` tool; `extract` tool gains tavily `query` /
+  `extract_depth` / `extract_format` params.
+- **Schema**: `hsearch schema` documents the `agent` subcommand; `extract` tool
+  provider enum gains `tavily`.
+
+### Notes
+- **Exa search `context` request param NOT wired** — the current Exa docs mark it
+  deprecated ("Use highlights or text instead"), so it was deliberately skipped
+  (same discipline as the v0.5.0 `startCrawlDate` removal). Use `--highlights` /
+  `--text` instead.
+- Exa Agent run statuses: `queued → running → completed|failed|cancelled`.
+- `test_version_bumped` in older test files de-hardcoded to a well-formed-version
+  check so future bumps don't break it; the exact-version assert lives in the
+  latest release's test file.
+
 ## [0.7.0] — 2026-06-12
 
 Provider drift wave (2026-05/06): Tavily Research API, Exa Company Search,

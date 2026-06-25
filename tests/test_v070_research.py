@@ -281,9 +281,13 @@ def test_cli_search_has_firecrawl_v070_flags():
 
 
 def test_version_bumped():
+    # De-hardcoded (v0.8.0): assert version string is well-formed, not a frozen
+    # literal — every release used to break this assert. The current-version
+    # check lives in the latest release's test file (test_v080_*).
     from hsearch import __version__
 
-    assert __version__ == "0.7.0"
+    parts = __version__.split(".")
+    assert len(parts) >= 2 and all(p.isdigit() for p in parts[:2])
 
 
 def test_cli_version():

@@ -134,7 +134,15 @@ class FirecrawlProvider(SearchProvider):
             scrape_opts["parsers"] = list(parsers)
         if kwargs.get("redact_pii") is not None:
             scrape_opts["redactPII"] = bool(kwargs["redact_pii"])
-        if formats or any(k in scrape_opts for k in ("location", "timeout", "waitFor", "mobile", "onlyCleanContent", "maxAge", "minAge", "blockAds", "removeBase64Images", "proxy", "parsers", "redactPII")):
+        if kwargs.get("store_in_cache") is not None:
+            scrape_opts["storeInCache"] = bool(kwargs["store_in_cache"])
+        if kwargs.get("lockdown") is not None:
+            scrape_opts["lockdown"] = bool(kwargs["lockdown"])
+        if kwargs.get("zero_data_retention") is not None:
+            scrape_opts["zeroDataRetention"] = bool(kwargs["zero_data_retention"])
+        if kwargs.get("skip_tls_verification") is not None:
+            scrape_opts["skipTlsVerification"] = bool(kwargs["skip_tls_verification"])
+        if formats or any(k in scrape_opts for k in ("location", "timeout", "waitFor", "mobile", "onlyCleanContent", "maxAge", "minAge", "blockAds", "removeBase64Images", "proxy", "parsers", "redactPII", "storeInCache", "lockdown", "zeroDataRetention", "skipTlsVerification")):
             payload["scrapeOptions"] = scrape_opts
 
         resp = await self._request(

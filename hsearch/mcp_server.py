@@ -13,6 +13,7 @@ from hsearch.engine import (
     ground as engine_ground,
     find_similar as engine_find_similar,
     research as engine_research,
+    agent as engine_agent,
 )
 from hsearch.providers import list_providers
 from hsearch.schema import render_schema
@@ -165,9 +166,28 @@ async def search(
     return resp.to_dict()
 
 
-async def extract(url: str, provider: str = "jina") -> dict[str, Any]:
-    """Extract a URL and return the same JSON shape as ``hsearch extract -f json``."""
-    results = await extract_urls([url], provider=provider, concurrency=1)
+async def extract(
+    url: str,
+    provider: str = "jina",
+    query: str | None = None,
+    extract_depth: str | None = None,
+    extract_format: str | None = None,
+) -> dict[str, Any]:
+    """Extract a URL and return the same JSON shape as ``hsearch extract -f json``.
+
+    provider: jina | firecrawl | tavily. The tavily provider also honors
+    ``query`` (rerank chunks by relevance), ``extract_depth`` (basic|advanced),
+    and ``extract_format`` (markdown|text).
+    """
+    options: dict[str, Any] = {}
+    if provider == "tavily":
+        if query:
+            options["query"] = query
+        if extract_depth:
+            options["extract_depth"] = extract_depth
+        if extract_format:
+            options["format"] = extract_format
+    results = await extract_urls([url], provider=provider, concurrency=1, **options)
     ok = [{"url": r.url, "content": r.content} for r in results if not r.error]
     errors = {r.url: r.error for r in results if r.error}
     out: dict[str, Any] = {
@@ -248,6 +268,21 @@ async def research_tool(
     return resp.to_dict()
 
 
+async def agent_tool(
+    query: str,
+    effort: str = "auto",
+    timeout: float = 600.0,
+) -> dict[str, Any]:
+    """Run an Exa Agent task (async high-compute research / list-building / enrichment).
+
+    effort: minimal | low | medium | high | xhigh | auto. minimal/low answer
+    narrow questions in seconds; high/xhigh deep multi-hop tasks take minutes.
+    Returns the final text/structured output, grounding, and cost breakdown.
+    """
+    resp = await engine_agent(query, effort=effort, timeout=timeout)
+    return resp.to_dict()
+
+
 def build_server() -> Any:
     """Build a FastMCP server with hsearch tools registered."""
     if FastMCP is None:
@@ -262,6 +297,7 @@ def build_server() -> Any:
     server.tool(name="ground")(ground_tool)
     server.tool(name="similar")(similar_tool)
     server.tool(name="research")(research_tool)
+    server.tool(name="agent")(agent_tool)
     server.tool(name="providers")(providers)
     server.tool(name="schema")(schema)
     return server
