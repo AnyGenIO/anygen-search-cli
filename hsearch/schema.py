@@ -50,9 +50,14 @@ SEARCH_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "enum": list(ALL_MODES),
                         "description": (
-                            "Routing mode. 'default' uses tavily. 'news' uses brave+serper. "
-                            "'academic' uses exa. 'fast' minimizes latency. 'recall' maximizes coverage. "
-                            "'answer' enables Tavily answer synthesis."
+                            "Routing mode. 'default' uses tavily+brave. 'news' uses brave+serper+tavily. "
+                            "'academic' uses exa with category=publication. 'fast' minimizes latency. "
+                            "'recall' fans out to all 6 providers for maximum coverage. "
+                            "'answer' enables Tavily answer synthesis. "
+                            "'finance' for stock/earnings/SEC. "
+                            "'rag' (v1.0.0) returns ONE pre-assembled LLM-ready context string in "
+                            "meta.context — the best single call for grounding an answer. "
+                            "'context' is different: Brave per-result grounding snippets."
                         ),
                         "cli_flag": "--mode / -m",
                     },
@@ -719,6 +724,17 @@ SEARCH_SCHEMA: dict[str, Any] = {
                     "command": 'hsearch crawl "https://docs.example.com" --limit 20 --instructions "API reference pages only"',
                 },
             ],
+        },
+        {
+            "name": "usage",
+            "description": (
+                "Show remaining quota / credits for providers that expose a usage "
+                "endpoint (Tavily plan+per-capability counts, Firecrawl remaining "
+                "credits). Call before an expensive multi-provider sweep. "
+                "Brave/Serper/Exa/Jina have no public usage API."
+            ),
+            "cli_usage": "hsearch usage [--format table|json]",
+            "parameters": {"type": "object", "properties": {}},
         },
         {
             "name": "providers",

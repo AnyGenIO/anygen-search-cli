@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import os
 from typing import Any
 
@@ -181,6 +182,68 @@ class TavilyProvider(SearchProvider):
             "POST", RESEARCH_ENDPOINT, headers=self._auth_headers(), json=payload
         )
         return resp.json()
+
+    async def research_stream(self, input_text: str, **kwargs: Any):
+        """POST /research with stream=True — yield report text deltas as they arrive.
+
+        Live-verified 2026-08-14: responds `text/event-stream` with
+        OpenAI-compatible framing —
+
+            event: chat.completion.chunk
+            data: {"id": "...", "object": "chat.completion.chunk",
+                   "model": "mini", "created": 1786712381,
+                   "choices": [{"delta": {"content": "..."}, ...}]}
+
+        Yields the incremental `choices[].delta.content` strings. Bypasses
+        ``_request`` (which buffers the whole body and can't stream) and uses
+        the shared httpx client directly, so it has no retry wrapper — a
+        stream that dies mid-report can't be transparently retried anyway.
+        """
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        payload: dict[str, Any] = {"input": input_text, "stream": True}
+        model = kwargs.get("model")
+        if model in ("mini", "pro", "auto"):
+            payload["model"] = model
+        citation_format = kwargs.get("citation_format")
+        if citation_format in ("numbered", "mla", "apa", "chicago"):
+            payload["citation_format"] = citation_format
+        if kwargs.get("output_schema"):
+            payload["output_schema"] = kwargs["output_schema"]
+        if kwargs.get("include_domains"):
+            payload["include_domains"] = kwargs["include_domains"]
+        if kwargs.get("exclude_domains"):
+            payload["exclude_domains"] = kwargs["exclude_domains"]
+
+        timeout = kwargs.get("timeout") or 600.0
+        async with self._client.stream(
+            "POST", RESEARCH_ENDPOINT, headers=self._auth_headers(),
+            json=payload, timeout=timeout,
+        ) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                from hsearch.providers.base import ProviderHTTPError
+
+                raise ProviderHTTPError(resp.status_code, body.decode(errors="replace")[:400])
+            async for line in resp.aiter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                raw = line[5:].strip()
+                if not raw or raw == "[DONE]":
+                    continue
+                try:
+                    chunk = _json.loads(raw)
+                except ValueError:
+                    continue
+                for choice in chunk.get("choices") or []:
+                    if not isinstance(choice, dict):
+                        continue
+                    delta = choice.get("delta") or {}
+                    piece = delta.get("content")
+                    if isinstance(piece, str) and piece:
+                        yield piece
 
     async def research_get(self, request_id: str) -> dict[str, Any]:
         """GET /research/{id} — poll a research task's status/result."""

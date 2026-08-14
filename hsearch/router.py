@@ -23,6 +23,10 @@ MODE_MAP: dict[str, list[str]] = {
     "finance": ["tavily", "serper", "brave"],
     "recall": ["exa", "tavily", "brave", "serper", "firecrawl", "jina"],
     "context": ["brave"],
+    # v1.0.0 — Exa-only: contents.context returns ONE pre-assembled LLM-ready
+    # context string. Single provider on purpose; merging context blobs across
+    # providers would defeat the "one clean string" contract.
+    "rag": ["exa"],
 }
 
 # Fallback providers per provider — used when primary provider fails.

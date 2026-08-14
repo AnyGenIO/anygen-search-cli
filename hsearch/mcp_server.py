@@ -16,6 +16,7 @@ from hsearch.engine import (
     agent as engine_agent,
     map_site as engine_map_site,
     crawl_site as engine_crawl_site,
+    account_usage as engine_account_usage,
 )
 from hsearch.providers import list_providers
 from hsearch.schema import render_schema
@@ -327,6 +328,16 @@ async def crawl_tool(
     return resp.to_dict()
 
 
+async def usage_tool() -> dict[str, Any]:
+    """Remaining quota / usage for providers that expose it (Tavily, Firecrawl).
+
+    Call this before launching an expensive multi-provider sweep so you know
+    whether credits will run out mid-run. Brave/Serper/Exa/Jina have no public
+    usage endpoint; Exa reports per-call costDollars in search responses.
+    """
+    return await engine_account_usage()
+
+
 def build_server() -> Any:
     """Build a FastMCP server with hsearch tools registered."""
     if FastMCP is None:
@@ -344,6 +355,7 @@ def build_server() -> Any:
     server.tool(name="agent")(agent_tool)
     server.tool(name="map")(map_tool)
     server.tool(name="crawl")(crawl_tool)
+    server.tool(name="usage")(usage_tool)
     server.tool(name="providers")(providers)
     server.tool(name="schema")(schema)
     return server

@@ -11,6 +11,7 @@ MODE_CACHE_TTL_SECONDS: dict[str, int] = {
     "general": 3600,
     "fast": 3600,
     "recall": 3600,
+    "rag": 3600,
     "shopping": 3600,
     "video": 7200,
     "images": 7200,

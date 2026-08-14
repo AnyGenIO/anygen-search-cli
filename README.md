@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-245%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -139,6 +139,16 @@ That's it — the LLM reads the schema and figures out the rest.
 ## Quick recipes
 
 ```bash
+# NEW v1.0.0 — ONE pre-assembled LLM-ready context string for grounding (Exa contents.context)
+hsearch search "how does RAG chunking work" --mode rag --top 5 --format json | jq -r .meta.context
+hsearch search "MCP spec" --context --context-max-chars 4000 --top 3   # bound it (unbounded ≈168K chars)
+
+# NEW v1.0.0 — stream a deep-research report as it is written (SSE)
+hsearch research "compare Postgres vs SQLite for edge apps" --model mini --stream
+
+# NEW v1.0.0 — remaining quota before an expensive sweep
+hsearch usage
+
 # NEW v0.9.0 — map a site's COMPLETE URL inventory (beats React pagination / stale sitemaps)
 hsearch map "https://docs.tavily.com" --limit 200 -f urls
 

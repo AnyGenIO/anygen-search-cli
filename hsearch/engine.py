@@ -38,6 +38,7 @@ class SearchResponse:
 
     results: list[SearchResult] = field(default_factory=list)
     answer: str | None = None
+    context: str | None = None
     errors: dict[str, str] = field(default_factory=dict)
     meta: dict[str, Any] = field(default_factory=dict)
 
@@ -47,6 +48,8 @@ class SearchResponse:
             out["meta"] = self.meta
         if self.answer:
             out["meta"] = {**out.get("meta", {}), "answer": self.answer}
+        if self.context:
+            out["meta"] = {**out.get("meta", {}), "context": self.context}
         out["results"] = [r.to_dict() for r in self.results]
         if self.errors:
             out["errors"] = self.errors
@@ -103,6 +106,9 @@ async def _run_one(
             ans = getattr(provider, "_last_answer", None)
             if ans:
                 extras_out["answer"] = ans
+            ctx = getattr(provider, "_last_context", None)
+            if isinstance(ctx, str) and ctx:
+                extras_out["context"] = ctx
             usage = getattr(provider, "_last_usage", None)
             if isinstance(usage, dict) and usage:
                 extras_out["usage"] = usage
@@ -264,6 +270,13 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     elif mode_key == "context":
         extra["search_kind"] = "context"
         extra["context_threshold_mode"] = "balanced"
+    elif mode_key == "rag":
+        # v1.0.0 — Exa contents.context: ONE pre-assembled, LLM-ready context
+        # string across all results, in a single call. Distinct from
+        # `--mode context` (Brave's LLM Context endpoint, which returns
+        # per-result grounding snippets you still have to stitch yourself).
+        extra["context"] = True
+        extra["type"] = "auto"
     elif mode_key == "recall":
         extra["type"] = "deep-reasoning"
         extra["highlights"] = True
@@ -332,6 +345,10 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         # news | people | personal site | financial report. Retired names are
         # normalized in providers/exa.py::_normalize_category.
         extra["category"] = kwargs["category"]
+    if kwargs.get("context"):
+        extra["context"] = True
+    if kwargs.get("context_max_characters") is not None:
+        extra["context_max_characters"] = kwargs["context_max_characters"]
     if kwargs.get("include_favicon"):
         extra["include_favicon"] = True
     if kwargs.get("include_usage"):
@@ -513,6 +530,14 @@ async def search(
     # Aggregate answers from all providers
     aggregated_answer = _aggregate_answers(extras_by_provider)
 
+    # Pre-assembled LLM context (Exa contents.context). Take the longest —
+    # same "most detailed wins" rule as _aggregate_answers.
+    aggregated_context: str | None = None
+    for prov_extras in extras_by_provider.values():
+        c = prov_extras.get("context")
+        if isinstance(c, str) and c and len(c) > len(aggregated_context or ""):
+            aggregated_context = c
+
     cache_status = {
         p: extras_by_provider.get(p, {}).get("cached")
         for p in resolved_providers
@@ -541,6 +566,8 @@ async def search(
     # accessor — this is purely additive for CLI/JSON parity.
     if aggregated_answer:
         meta["answer"] = aggregated_answer
+    if aggregated_context:
+        meta["context"] = aggregated_context
     if all_related:
         meta["related_searches"] = all_related[:10]
 
@@ -566,6 +593,7 @@ async def search(
     return SearchResponse(
         results=merged,
         answer=aggregated_answer,
+        context=aggregated_context,
         errors=errors,
         meta=meta,
     )
@@ -886,6 +914,106 @@ async def research(
 def research_sync(input_text: str, **kwargs: Any) -> ResearchResponse:
     """Synchronous wrapper around :func:`research`."""
     return asyncio.run(research(input_text, **kwargs))
+
+
+async def research_streaming(input_text: str, **kwargs: Any):
+    """Stream a Tavily deep-research report, yielding text deltas as they arrive.
+
+    Async generator. Use when you want first-token latency instead of waiting
+    for the whole report (a mini run takes 15-25s end-to-end).
+    """
+    try:
+        provider = get_provider("tavily")
+    except KeyError as e:
+        raise RuntimeError(str(e)) from e
+    async with provider:
+        from hsearch.providers.tavily import TavilyProvider
+
+        if not isinstance(provider, TavilyProvider):
+            raise RuntimeError("tavily provider not available")
+        async for piece in provider.research_stream(input_text, **kwargs):
+            yield piece
+
+
+async def account_usage() -> dict[str, Any]:
+    """Fetch remaining quota / usage from every provider that exposes it.
+
+    Live-verified 2026-08-14 — only two of the six publish a usage endpoint:
+      - Tavily    GET /usage                     → plan + per-capability counts
+      - Firecrawl GET /v2/team/credit-usage       → remainingCredits + period
+    Brave / Serper / Exa / Jina have no public per-key usage API (Exa reports
+    per-call `costDollars` in each search response instead, which is surfaced
+    via `--include-usage`, not here).
+
+    Never raises: unreachable providers land in the per-provider `error` field
+    so a single dead endpoint can't break the whole report.
+    """
+    out: dict[str, Any] = {}
+
+    async def _tavily() -> None:
+        try:
+            provider = get_provider("tavily")
+        except KeyError as e:
+            out["tavily"] = {"error": str(e)}
+            return
+        if not provider.is_configured():
+            out["tavily"] = {"error": "not configured"}
+            return
+        try:
+            async with provider:
+                resp = await provider._request(  # noqa: SLF001 — internal by design
+                    "GET", "https://api.tavily.com/usage",
+                    headers={"Authorization": f"Bearer {provider.api_key}"},
+                )
+                data = resp.json()
+            key_u = data.get("key") or {}
+            acct = data.get("account") or {}
+            out["tavily"] = {
+                "plan": acct.get("current_plan"),
+                "plan_usage": acct.get("plan_usage"),
+                "plan_limit": acct.get("plan_limit"),
+                "key_usage": key_u.get("usage"),
+                "by_capability": {
+                    k.replace("_usage", ""): v
+                    for k, v in key_u.items()
+                    if k.endswith("_usage")
+                },
+            }
+        except Exception as e:  # noqa: BLE001
+            out["tavily"] = {"error": f"{type(e).__name__}: {e}"}
+
+    async def _firecrawl() -> None:
+        try:
+            provider = get_provider("firecrawl")
+        except KeyError as e:
+            out["firecrawl"] = {"error": str(e)}
+            return
+        if not provider.is_configured():
+            out["firecrawl"] = {"error": "not configured"}
+            return
+        try:
+            async with provider:
+                resp = await provider._request(  # noqa: SLF001
+                    "GET", "https://api.firecrawl.dev/v2/team/credit-usage",
+                    headers={"Authorization": f"Bearer {provider.api_key}"},
+                )
+                data = (resp.json() or {}).get("data") or {}
+            out["firecrawl"] = {
+                "remaining_credits": data.get("remainingCredits"),
+                "plan_credits": data.get("planCredits"),
+                "period_start": data.get("billingPeriodStart"),
+                "period_end": data.get("billingPeriodEnd"),
+            }
+        except Exception as e:  # noqa: BLE001
+            out["firecrawl"] = {"error": f"{type(e).__name__}: {e}"}
+
+    await asyncio.gather(_tavily(), _firecrawl())
+    return out
+
+
+def account_usage_sync() -> dict[str, Any]:
+    """Synchronous wrapper around :func:`account_usage`."""
+    return asyncio.run(account_usage())
 
 
 # ---------------------------------------------------------------------------

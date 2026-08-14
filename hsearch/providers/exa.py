@@ -54,6 +54,11 @@ def _normalize_category(value: Any) -> Any:
 _SLOW_EXA_TYPES = {"deep-reasoning", "deep"}
 _SLOW_EXA_TIMEOUT = 45.0
 
+# Cap for `contents.context`. Unbounded is a footgun — live probe returned
+# 168K chars (275K with text=True). 12K is roughly 3K tokens: enough grounding
+# for a real answer, small enough to paste into a prompt.
+_DEFAULT_CONTEXT_CHARS = 12000
+
 
 def _search_timeout(payload: dict[str, Any]) -> float | None:
     """Per-call timeout floor for slow Exa search tiers.
@@ -73,6 +78,11 @@ def _search_timeout(payload: dict[str, Any]) -> float | None:
 class ExaProvider(SearchProvider):
     name = "exa"
     requires_env = ["EXA_API_KEY"]
+
+    # Last response's top-level `context` string (from contents.context).
+    # Mirrored into SearchResponse.context / meta.context by the engine, the
+    # same pattern TavilyProvider._last_answer uses for `--answer`.
+    _last_context: str | None = None
 
     async def _search(self, query: str, count: int = 10, **kwargs: Any) -> list[SearchResult]:
         payload: dict[str, Any] = {
@@ -128,6 +138,30 @@ class ExaProvider(SearchProvider):
             contents["summary"] = {"query": kwargs["summary_query"]}
         elif kwargs.get("summary"):
             contents["summary"] = {} if kwargs["summary"] is True else kwargs["summary"]
+
+        # `contents.context` (v1.0.0) — Exa assembles ONE pre-formatted
+        # LLM-ready context string across all results, returned at the TOP
+        # LEVEL of the response (not per-result).
+        #
+        # 🚨 Placement matters and cost us a release: the 2026-06-25 drift
+        # review saw a *top-level* `context` request param marked deprecated
+        # ("use highlights or text instead") and dropped the whole feature.
+        # Live-probed 2026-08-14: top-level `context: true` is silently
+        # IGNORED (no `context` key in the response), while
+        # `contents.context` WORKS and returns the string. Two different
+        # params with the same name — one retired, one current.
+        #
+        # ALWAYS bound it: unbounded returned 168,235 chars (275,969 with
+        # text=True) in the live probe, which would blow any context window
+        # and is a token-cost trap. Default to a sane cap.
+        if kwargs.get("context"):
+            max_chars = kwargs.get("context_max_characters")
+            if max_chars is None:
+                max_chars = _DEFAULT_CONTEXT_CHARS
+            try:
+                contents["context"] = {"maxCharacters": int(max_chars)}
+            except (TypeError, ValueError):
+                contents["context"] = {"maxCharacters": _DEFAULT_CONTEXT_CHARS}
 
         if kwargs.get("max_age_hours") is not None:
             try:
@@ -193,6 +227,11 @@ class ExaProvider(SearchProvider):
             timeout=_search_timeout(payload),
         )
         data = resp.json()
+
+        # Top-level pre-assembled LLM context (only present when
+        # contents.context was requested).
+        ctx = data.get("context")
+        self._last_context = ctx if isinstance(ctx, str) and ctx else None
 
         out: list[SearchResult] = []
         for r in (data.get("results") or [])[:count]:

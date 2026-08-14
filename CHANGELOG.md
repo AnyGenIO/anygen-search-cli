@@ -4,6 +4,56 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [1.0.0] — 2026-08-14
+
+Closes the deferral backlog from the 2026-08-14 drift review. **Every item was
+live-probed before any code was written** — which is how half of them got
+cancelled instead of built (see "Probed and rejected" below). 303 tests.
+
+### Added
+- **`--mode rag` / `--context`** — Exa `contents.context`. Returns ONE
+  pre-assembled, LLM-ready context string spanning all results, surfaced as
+  `meta.context` (CLI JSON) and `SearchResponse.context` (SDK). The single best
+  call for grounding an answer: no stitching snippets together yourself.
+  - **`--context-max-chars` (default 12000).** Always bounded on purpose:
+    unbounded returned **168,235 chars** live (275,969 with `text=True`), which
+    would blow any context window and quietly burn tokens.
+  - Distinct from the existing `--mode context` (Brave's LLM Context endpoint,
+    per-result grounding snippets). `rag` = one blob; `context` = many snippets.
+- **`hsearch research --stream`** — Tavily research over SSE. Prints the report
+  as it is written instead of waiting 15-25s for the buffered version. Wire
+  format is OpenAI-compatible (`chat.completion.chunk`, deltas at
+  `choices[].delta.content`). SDK: `research_streaming()` async generator.
+- **`hsearch usage`** — remaining quota/credits per provider. Live: Tavily
+  plan + per-capability counts (search/crawl/extract/map/research), Firecrawl
+  remaining credits + billing period. Run it before an expensive sweep. SDK:
+  `account_usage()` / `account_usage_sync()`; MCP tool `usage`.
+  Failures are isolated per provider — one dead endpoint can't break the report.
+- MCP server now exposes 12 tools (added `usage`); `hsearch schema` lists 12.
+
+### Probed and rejected (documented so nobody re-researches them)
+Vendor docs and sitemaps advertise these; the live API disagrees. Verified
+2026-08-14 with real keys:
+- **Firecrawl `/v2/ask`** → HTTP 404 (all three body shapes tried).
+- **Firecrawl `/v2/monitors`** (GET + POST) → HTTP 404. The whole monitors
+  family is in the docs sitemap but not live on v2 for this account tier.
+- **Tavily keyless search** → HTTP 401 `missing or invalid API key`, despite a
+  documented "Try Tavily Without an API Key" page.
+- **Exa top-level `context: true`** → silently ignored, no `context` key in the
+  response. Only `contents.context` works. This is the param the 2026-06-25
+  review saw marked deprecated and used to drop the feature entirely — two
+  different params share the name, one retired, one current.
+
+### Changed
+- `SearchResponse` gains a `context` field, mirrored into `meta.context` for
+  CLI/JSON parity (same fix pattern as the v0.6.0 `meta.answer` drop).
+- Cache TTL for the new `rag` mode: 3600s.
+
+### Tests
+- 303 passing (279 → 303; 24 new in `tests/test_v100_context_stream_usage.py`).
+- Streaming tests cover malformed frames, empty deltas, HTTP errors and bad
+  model names — the SSE parser must never crash a long research run.
+
 ## [0.9.0] — 2026-08-14
 
 Provider drift wave (2026-08) + site traversal. Three vendor changes broke or

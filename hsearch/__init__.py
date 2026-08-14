@@ -15,7 +15,7 @@ Async::
     resp = await search("Python tutorial", providers=["tavily", "brave"])
 """
 
-__version__ = "0.9.0"
+__version__ = "1.0.0"
 
 from hsearch.engine import (
     AgentResponse,
@@ -40,7 +40,10 @@ from hsearch.engine import (
     map_site,
     map_site_sync,
     research,
+    research_streaming,
     research_sync,
+    account_usage,
+    account_usage_sync,
     search,
     search_sync,
 )
@@ -73,7 +76,10 @@ __all__ = [
     "ground",
     "ground_sync",
     "research",
+    "research_streaming",
     "research_sync",
+    "account_usage",
+    "account_usage_sync",
     "search",
     "search_sync",
 ]

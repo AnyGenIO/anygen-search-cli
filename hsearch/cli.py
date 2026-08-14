@@ -27,9 +27,11 @@ from hsearch.engine import (
     ground as engine_ground,
     find_similar as engine_find_similar,
     research as engine_research,
+    research_streaming as engine_research_streaming,
     agent as engine_agent,
     map_site as engine_map_site,
     crawl_site as engine_crawl_site,
+    account_usage as engine_account_usage,
     AgentResponse,
     AnswerResponse,
     GroundingResponse,
@@ -228,6 +230,15 @@ def search(
              "financial report. Retired names ('research paper', 'linkedin profile') "
              "are auto-mapped to their successors.",
     ),
+    context: bool = typer.Option(
+        False, "--context",
+        help="Exa contents.context — return ONE pre-assembled LLM-ready context "
+             "string across all results (surfaced as meta.context). Same as --mode rag.",
+    ),
+    context_max_characters: Optional[int] = typer.Option(
+        None, "--context-max-chars",
+        help="Cap the --context string (default 12000). Unbounded can exceed 160K chars.",
+    ),
     include_favicon: bool = typer.Option(
         False, "--include-favicon",
         help="Tavily: return favicon URL per result.",
@@ -407,6 +418,8 @@ def search(
                 depth=depth,
                 exa_type=exa_type,
                 category=category,
+                context=context,
+                context_max_characters=context_max_characters,
                 include_favicon=include_favicon,
                 include_usage=include_usage,
                 include_images=include_images,
@@ -747,6 +760,55 @@ def crawl_cmd(
     _render_traversal(resp, fmt, show_content=True)
 
 
+@app.command("usage")
+def usage_cmd(
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="table | json (auto: json when piped)."
+    ),
+) -> None:
+    """Show remaining quota / usage for providers that expose it.
+
+    Only Tavily and Firecrawl publish a per-key usage endpoint. Brave, Serper,
+    Exa and Jina have none — Exa reports per-call cost in each search response
+    instead (see `--include-usage`).
+    """
+    data = asyncio.run(engine_account_usage())
+    if fmt is None:
+        fmt = "table" if sys.stdout.isatty() else "json"
+    if fmt == "json":
+        import json
+
+        sys.stdout.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        return
+    table = Table(title="hsearch usage", header_style="bold cyan")
+    table.add_column("Provider", style="bold")
+    table.add_column("Quota / usage")
+    table.add_column("Detail", style="dim")
+    for prov in sorted(data):
+        d = data[prov] or {}
+        if d.get("error"):
+            table.add_row(prov, "[red]unavailable[/]", str(d["error"])[:60])
+            continue
+        if prov == "tavily":
+            quota = f"{d.get('plan_usage')}/{d.get('plan_limit')}"
+            caps = d.get("by_capability") or {}
+            detail = f"plan={d.get('plan')} " + " ".join(
+                f"{k}={v}" for k, v in caps.items() if v
+            )
+        elif prov == "firecrawl":
+            quota = f"{d.get('remaining_credits')} left / {d.get('plan_credits')}"
+            detail = f"period ends {str(d.get('period_end'))[:10]}"
+        else:
+            quota = "-"
+            detail = str(d)[:60]
+        table.add_row(prov, quota, detail)
+    console.print(table)
+    console.print(
+        "[dim]brave / serper / exa / jina: no public usage endpoint. "
+        "Exa returns per-call costDollars — use `--include-usage`.[/]"
+    )
+
+
 @app.command("answer")
 def answer_cmd(
     query: str = typer.Argument(..., help="Question to answer."),
@@ -802,6 +864,11 @@ def research_cmd(
     poll_interval: float = typer.Option(
         5.0, "--poll-interval", help="Seconds between status polls."
     ),
+    stream: bool = typer.Option(
+        False, "--stream",
+        help="Stream the report to stdout as it is written (SSE) instead of "
+             "waiting for the whole thing. Ignores --format.",
+    ),
     fmt: Optional[str] = typer.Option(
         None, "--format", "-f", help="json | markdown (auto: json when piped)."
     ),
@@ -809,7 +876,37 @@ def research_cmd(
     """Run a Tavily deep-research task (async agent) and print the final report.
 
     Mini-model tasks usually complete in 10-60s; pro can take several minutes.
+    Pass --stream to see text as it is generated.
     """
+    if stream:
+        async def _run_stream() -> int:
+            n = 0
+            try:
+                async for piece in engine_research_streaming(
+                    input_text,
+                    model=model,
+                    citation_format=citation_format,
+                    include_domains=list(include_domains) if include_domains else None,
+                    exclude_domains=list(exclude_domains) if exclude_domains else None,
+                    timeout=timeout,
+                ):
+                    sys.stdout.write(piece)
+                    sys.stdout.flush()
+                    n += len(piece)
+            except Exception as e:  # noqa: BLE001 — surface any stream failure cleanly
+                err_console.print(f"\n[red]stream error:[/] {type(e).__name__}: {e}")
+                return 1
+            sys.stdout.write("\n")
+            if n == 0:
+                err_console.print(
+                    "[yellow]warning:[/] stream produced no content — "
+                    "retry without --stream to get the buffered report."
+                )
+                return 1
+            return 0
+
+        raise typer.Exit(asyncio.run(_run_stream()))
+
     resp: ResearchResponse = asyncio.run(
         engine_research(
             input_text,
