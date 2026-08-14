@@ -93,7 +93,24 @@ async def _run_one(
     if use_cache and cache is not None:
         hit = cache.get(provider_name, eff_query, cache_params)
         if hit is not None:
-            results = [SearchResult(**r) for r in hit]
+            # Two on-disk shapes are supported:
+            #   * legacy: a bare list of result dicts (pre-2026-08-14 entries)
+            #   * current: {"results": [...], "extras": {...}}
+            # The envelope exists because provider extras (Tavily's synthesized
+            # `answer`, Exa's `context`, usage) were NOT cached, so any cache
+            # HIT silently returned a 0-char answer while the cold call worked.
+            # `--mode answer` has a 900s TTL, so most real invocations hit
+            # cache and lost the answer -- HTTP 200, errors=None, no answer.
+            if isinstance(hit, dict):
+                cached_results = hit.get("results") or []
+                cached_extras = hit.get("extras") or {}
+            else:
+                cached_results, cached_extras = hit, {}
+            results = [SearchResult(**r) for r in cached_results]
+            for key in ("answer", "context", "usage"):
+                val = cached_extras.get(key)
+                if val:
+                    extras_out[key] = val
             extras_out["cached"] = True
             return provider_name, results, None, extras_out
     try:
@@ -134,7 +151,15 @@ async def _run_one(
             provider_name,
             eff_query,
             cache_params,
-            [r.to_dict() | {"raw": {}} for r in results],
+            {
+                "results": [r.to_dict() | {"raw": {}} for r in results],
+                # Persist the provider extras alongside the results so a cache
+                # HIT reproduces the cold-call response. Without this the
+                # synthesized answer/context vanished on every cached call.
+                "extras": {
+                    k: v for k, v in extras_out.items() if k in ("answer", "context", "usage")
+                },
+            },
             ttl=cache_ttl_override,
         )
     extras_out["cached"] = False
@@ -411,6 +436,25 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["highlights_query"] = kwargs["highlights_query"]
     if kwargs.get("exa_output_schema"):
         extra["output_schema"] = kwargs["exa_output_schema"]
+
+    # --- Tavily answer/depth compatibility guard (2026-08-14 drift) ---------
+    # Tavily returns ``answer: null`` for EVERY request with
+    # ``search_depth="basic"`` (Tavily's default), regardless of the
+    # ``include_answer`` value. Live-probed 2026-08-14 with a real key:
+    #   basic      + include_answer=basic/advanced/True -> answer: null  (6/6)
+    #   fast       + include_answer=advanced            -> 719 chars
+    #   ultra-fast + include_answer=advanced            -> 557 chars
+    #   advanced   + include_answer=advanced            -> 1006 chars
+    # This silently broke `--mode answer` (asks for an answer but never set a
+    # depth, so the provider default "basic" applied) while `--mode finance`
+    # and `--mode recall` kept working because they pin depth="advanced".
+    # Failure shape was a 0-char answer with HTTP 200 and errors=None.
+    # Fix: whenever an answer is requested, ensure the depth is one that can
+    # actually return one. Only "basic" is upgraded -- an explicit
+    # fast/ultra-fast (e.g. --mode fast) is answer-capable and is preserved so
+    # latency-first modes keep their timing characteristics.
+    if extra.get("include_answer") and extra.get("search_depth", "basic") == "basic":
+        extra["search_depth"] = "advanced"
 
     return extra
 
