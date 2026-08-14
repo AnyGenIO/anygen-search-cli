@@ -229,7 +229,10 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
         extra["topic"] = "news"
         extra["freshness"] = "pw"
     elif mode_key == "academic":
-        extra["category"] = "research paper"
+        # Exa July-2026: `publication` replaces the deprecated `research paper`
+        # category and is backed by a 350M-publication index with structured
+        # author/venue/citation metadata. See _normalize_category in exa.py.
+        extra["category"] = "publication"
     elif mode_key == "realtime":
         extra["freshness"] = "pd"
     elif mode_key == "shopping":
@@ -325,8 +328,9 @@ def _build_extra(mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     if kwargs.get("exa_type"):
         extra["type"] = kwargs["exa_type"]
     if kwargs.get("category"):
-        # Exa category filter (company | research paper | news | pdf | github |
-        # tweet | personal site | linkedin profile | financial report).
+        # Exa category filter. Current enum (2026-08): company | publication |
+        # news | people | personal site | financial report. Retired names are
+        # normalized in providers/exa.py::_normalize_category.
         extra["category"] = kwargs["category"]
     if kwargs.get("include_favicon"):
         extra["include_favicon"] = True
@@ -882,6 +886,117 @@ async def research(
 def research_sync(input_text: str, **kwargs: Any) -> ResearchResponse:
     """Synchronous wrapper around :func:`research`."""
     return asyncio.run(research(input_text, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Site traversal (Tavily /map + /crawl) — v0.9.0
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TraversalResponse:
+    """Response from Tavily /map or /crawl.
+
+    ``pages`` is normalized across both endpoints: /map yields URL-only entries
+    (``content`` is None), /crawl yields URL + extracted content.
+    """
+
+    base_url: str | None = None
+    pages: list[dict[str, Any]] = field(default_factory=list)
+    request_id: str | None = None
+    response_time: float | None = None
+    kind: str | None = None  # "map" | "crawl"
+    error: str | None = None
+
+    @property
+    def urls(self) -> list[str]:
+        return [p["url"] for p in self.pages if p.get("url")]
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "kind": self.kind,
+            "base_url": self.base_url,
+            "count": len(self.pages),
+            "pages": self.pages,
+        }
+        if self.request_id:
+            out["request_id"] = self.request_id
+        if self.response_time is not None:
+            out["response_time"] = self.response_time
+        if self.error:
+            out["error"] = self.error
+        return out
+
+
+def _normalize_traversal(data: dict[str, Any], kind: str) -> TraversalResponse:
+    """Normalize /map (list[str]) and /crawl (list[dict]) into one shape."""
+    raw = data.get("results") or []
+    pages: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, str):
+            pages.append({"url": item, "content": None})
+        elif isinstance(item, dict):
+            url = item.get("url") or ""
+            if not url:
+                continue
+            content = item.get("raw_content") or item.get("content")
+            entry: dict[str, Any] = {
+                "url": url,
+                "content": content if isinstance(content, str) else None,
+            }
+            if item.get("favicon"):
+                entry["favicon"] = item["favicon"]
+            if item.get("images"):
+                entry["images"] = item["images"]
+            pages.append(entry)
+    rt = data.get("response_time")
+    return TraversalResponse(
+        base_url=data.get("base_url"),
+        pages=pages,
+        request_id=data.get("request_id"),
+        response_time=rt if isinstance(rt, (int, float)) else None,
+        kind=kind,
+    )
+
+
+async def _traverse(url: str, kind: str, **kwargs: Any) -> TraversalResponse:
+    try:
+        provider = get_provider("tavily")
+    except KeyError as e:
+        return TraversalResponse(kind=kind, error=str(e))
+    try:
+        async with provider:
+            from hsearch.providers.tavily import TavilyProvider
+
+            if not isinstance(provider, TavilyProvider):
+                return TraversalResponse(kind=kind, error="tavily provider not available")
+            fn = provider.map_site if kind == "map" else provider.crawl_site
+            data = await fn(url, **kwargs)
+    except (ProviderAuthError, ProviderHTTPError) as e:
+        return TraversalResponse(kind=kind, error=str(e))
+    except Exception as e:
+        return TraversalResponse(kind=kind, error=f"{type(e).__name__}: {e}")
+    return _normalize_traversal(data, kind)
+
+
+async def map_site(url: str, **kwargs: Any) -> TraversalResponse:
+    """Discover a site's URL inventory via Tavily /map (fast, no extraction)."""
+    return await _traverse(url, "map", **kwargs)
+
+
+async def crawl_site(url: str, **kwargs: Any) -> TraversalResponse:
+    """Traverse a site and extract each page via Tavily /crawl."""
+    return await _traverse(url, "crawl", **kwargs)
+
+
+def map_site_sync(url: str, **kwargs: Any) -> TraversalResponse:
+    """Synchronous wrapper around :func:`map_site`."""
+    return asyncio.run(map_site(url, **kwargs))
+
+
+def crawl_site_sync(url: str, **kwargs: Any) -> TraversalResponse:
+    """Synchronous wrapper around :func:`crawl_site`."""
+    return asyncio.run(crawl_site(url, **kwargs))
 
 
 # ---------------------------------------------------------------------------

@@ -354,9 +354,17 @@ def test_cli_search_has_firecrawl_v080_flags():
 
 
 def test_version_bumped():
+    """v0.8.0 shipped the Exa Agent / Tavily Extract surfaces.
+
+    Assert the floor, not an exact literal — every release used to break this
+    test and get "fixed" by swapping in a new hardcoded string. What actually
+    matters is that we never regress BELOW the release this file covers, and
+    that pyproject.toml agrees (see tests/test_v090_drift.py).
+    """
     from hsearch import __version__
 
-    assert __version__ == "0.8.0"
+    parts = tuple(int(x) for x in __version__.split(".")[:3])
+    assert parts >= (0, 8, 0), f"version regressed below 0.8.0: {__version__}"
 
 
 def test_cli_version():

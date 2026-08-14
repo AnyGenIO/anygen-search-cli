@@ -11,6 +11,12 @@ from hsearch.providers.base import SearchProvider
 ENDPOINT = "https://api.tavily.com/search"
 RESEARCH_ENDPOINT = "https://api.tavily.com/research"
 EXTRACT_ENDPOINT = "https://api.tavily.com/extract"
+# Site traversal endpoints (live-verified 2026-08-14).
+#   /map   → returns results: list[str] of discovered URLs (fast, ~1s, no content)
+#   /crawl → returns results: list[{url, raw_content}] (extraction included)
+# Both accept natural-language `instructions` to steer which pages are followed.
+CRAWL_ENDPOINT = "https://api.tavily.com/crawl"
+MAP_ENDPOINT = "https://api.tavily.com/map"
 
 # Tavily search_depth options as of 2026-04 (added: fast, ultra-fast).
 # basic / advanced were the original two; fast / ultra-fast trade relevance for latency.
@@ -263,3 +269,81 @@ class TavilyProvider(SearchProvider):
     async def _extract(self, url: str) -> str | None:
         """Default extract hook — clean markdown via Tavily /extract (basic depth)."""
         return await self.extract_with_options(url, extract_depth="basic", format="markdown")
+
+    # ---- site traversal (v0.9.0) ---------------------------------------------
+
+    def _traversal_payload(self, url: str, **kwargs: Any) -> dict[str, Any]:
+        """Shared body builder for /map and /crawl."""
+        payload: dict[str, Any] = {"url": url}
+        for key, cast in (
+            ("max_depth", int),
+            ("max_breadth", int),
+            ("limit", int),
+        ):
+            val = kwargs.get(key)
+            if val is not None:
+                try:
+                    payload[key] = cast(val)
+                except (TypeError, ValueError):
+                    pass
+        # Natural-language steering — live-verified to genuinely narrow the
+        # traversal (a docs-site crawl with instructions returned only the one
+        # matching page instead of the whole depth-1 frontier).
+        if kwargs.get("instructions"):
+            payload["instructions"] = kwargs["instructions"]
+        for key in ("select_paths", "select_domains", "exclude_paths", "exclude_domains"):
+            val = kwargs.get(key)
+            if val:
+                payload[key] = [val] if isinstance(val, str) else list(val)
+        if kwargs.get("allow_external") is not None:
+            payload["allow_external"] = bool(kwargs["allow_external"])
+        if kwargs.get("categories"):
+            cats = kwargs["categories"]
+            payload["categories"] = [cats] if isinstance(cats, str) else list(cats)
+        return payload
+
+    async def map_site(self, url: str, **kwargs: Any) -> dict[str, Any]:
+        """POST /map — discover a site's URL graph without extracting content.
+
+        Returns the raw response: ``{base_url, results: list[str], response_time,
+        request_id}``. Much cheaper/faster than crawl when you only need the
+        URL inventory (e.g. enumerating a SaaS marketplace's detail pages).
+        """
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        payload = self._traversal_payload(url, **kwargs)
+        resp = await self._request(
+            "POST", MAP_ENDPOINT, headers=self._auth_headers(), json=payload,
+            timeout=kwargs.get("timeout") or 120.0,
+        )
+        return resp.json()
+
+    async def crawl_site(self, url: str, **kwargs: Any) -> dict[str, Any]:
+        """POST /crawl — traverse a site AND extract each page's content.
+
+        Returns ``{base_url, results: list[{url, raw_content}], response_time,
+        request_id}``. Accepts the /map traversal controls plus
+        ``extract_depth`` (basic|advanced) and ``format`` (markdown|text).
+        """
+        if not self.is_configured():
+            from hsearch.providers.base import ProviderAuthError
+
+            raise ProviderAuthError(f"{self.name}: missing env {','.join(self.requires_env)}")
+        payload = self._traversal_payload(url, **kwargs)
+        depth = kwargs.get("extract_depth")
+        if depth in _VALID_EXTRACT_DEPTHS:
+            payload["extract_depth"] = depth
+        fmt = kwargs.get("format")
+        if fmt in _VALID_EXTRACT_FORMATS:
+            payload["format"] = fmt
+        if kwargs.get("include_images"):
+            payload["include_images"] = True
+        if kwargs.get("include_favicon"):
+            payload["include_favicon"] = True
+        resp = await self._request(
+            "POST", CRAWL_ENDPOINT, headers=self._auth_headers(), json=payload,
+            timeout=kwargs.get("timeout") or 300.0,
+        )
+        return resp.json()

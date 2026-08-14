@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-245%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -139,6 +139,15 @@ That's it — the LLM reads the schema and figures out the rest.
 ## Quick recipes
 
 ```bash
+# NEW v0.9.0 — map a site's COMPLETE URL inventory (beats React pagination / stale sitemaps)
+hsearch map "https://docs.tavily.com" --limit 200 -f urls
+
+# NEW v0.9.0 — crawl + extract, with natural-language traversal steering
+hsearch crawl "https://docs.firecrawl.dev" --limit 20 --instructions "API reference endpoint pages only"
+
+# NEW v0.9.0 — Exa `people` category: LinkedIn/profile lookup
+hsearch search "Jensen Huang" --provider exa --category people --top 5
+
 # NEW v0.8.0 — Exa Agent: async deep-research / list-building / enrichment agent
 hsearch agent "What is Rocket Lab's ticker and business?" --effort minimal
 # structured list building with a JSON Schema → output.structured
@@ -156,8 +165,11 @@ hsearch research "What rockets will AST SpaceMobile use in 2026?" --model mini
 # NEW v0.7.0 — company entity search (Exa Company vertical)
 hsearch search "AI defense tech startups" --mode company --top 5
 
-# NEW v0.7.0 — Exa category filter (pdf / github / financial report / ...)
-hsearch search "Aurora Innovation investor presentation" --provider exa --category pdf
+# Exa category filter. Current enum (2026-08): company | publication | news |
+# people | personal site | financial report. Retired names ('research paper',
+# 'linkedin profile') are auto-normalized; pdf/github/tweet are deprecated
+# upstream and now act as loose hints only.
+hsearch search "Aurora Innovation quarterly results" --provider exa --category "financial report"
 
 # Default search (uses Tavily if configured)
 hsearch search "open source RAG frameworks 2026"

@@ -19,6 +19,56 @@ _VALID_EFFORTS = {"minimal", "low", "medium", "high", "xhigh", "auto"}
 # Terminal run statuses (lifecycle: queued → running → completed|failed|cancelled).
 _AGENT_TERMINAL = {"completed", "failed", "cancelled", "canceled", "error"}
 
+# Exa search categories, live-verified against the OpenAPI enum 2026-08-14:
+#   company | publication | news | personal site | financial report | people
+# July 2026 changelog: `publication` REPLACES `research paper`; `pdf`, `github`
+# and `tweet` are deprecated. Exa still accepts arbitrary strings as loose
+# "category hints", so the old names do not hard-fail — they just stop getting
+# first-class vertical treatment, which is a silent quality regression. We
+# normalize the retired names onto their supported successors so existing
+# scripts and muscle memory keep working at full quality.
+_CATEGORY_ALIASES = {
+    "research paper": "publication",
+    "research papers": "publication",
+    "paper": "publication",
+    "papers": "publication",
+    "publication": "publication",
+    "linkedin profile": "people",
+}
+# Deprecated with no first-class successor — passed through untouched as hints.
+_DEPRECATED_CATEGORIES = {"pdf", "github", "tweet"}
+
+
+def _normalize_category(value: Any) -> Any:
+    """Map retired Exa category names onto their current equivalents."""
+    if not isinstance(value, str):
+        return value
+    return _CATEGORY_ALIASES.get(value.strip().lower(), value)
+
+
+# Exa search types whose server-side work exceeds the global default timeout
+# (HSEARCH_TIMEOUT=15s). Live-measured 2026-08-14: `deep-reasoning` takes ~12s
+# standalone and reliably timed out inside `--mode recall`, where six providers
+# compete for connections — recall was silently losing its most expensive
+# provider on every run. Give the slow tiers their own floor.
+_SLOW_EXA_TYPES = {"deep-reasoning", "deep"}
+_SLOW_EXA_TIMEOUT = 45.0
+
+
+def _search_timeout(payload: dict[str, Any]) -> float | None:
+    """Per-call timeout floor for slow Exa search tiers.
+
+    Returns None for the fast tiers so the client-level default (and any
+    HSEARCH_TIMEOUT override) still applies. When the user has deliberately
+    raised HSEARCH_TIMEOUT above our floor, respect theirs.
+    """
+    if payload.get("type") not in _SLOW_EXA_TYPES:
+        return None
+    from hsearch.config import timeout_seconds
+
+    return max(_SLOW_EXA_TIMEOUT, timeout_seconds())
+
+
 
 class ExaProvider(SearchProvider):
     name = "exa"
@@ -122,7 +172,7 @@ class ExaProvider(SearchProvider):
             payload["contents"] = contents
 
         if kwargs.get("category"):
-            payload["category"] = kwargs["category"]
+            payload["category"] = _normalize_category(kwargs["category"])
         if kwargs.get("include_domains"):
             payload["includeDomains"] = kwargs["include_domains"]
         if kwargs.get("exclude_domains"):
@@ -138,7 +188,10 @@ class ExaProvider(SearchProvider):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        resp = await self._request("POST", SEARCH_ENDPOINT, headers=headers, json=payload)
+        resp = await self._request(
+            "POST", SEARCH_ENDPOINT, headers=headers, json=payload,
+            timeout=_search_timeout(payload),
+        )
         data = resp.json()
 
         out: list[SearchResult] = []
@@ -309,7 +362,7 @@ class ExaProvider(SearchProvider):
         if kwargs.get("end_published_date"):
             payload["endPublishedDate"] = kwargs["end_published_date"]
         if kwargs.get("category"):
-            payload["category"] = kwargs["category"]
+            payload["category"] = _normalize_category(kwargs["category"])
         headers = {
             "x-api-key": self.api_key or "",
             "Content-Type": "application/json",

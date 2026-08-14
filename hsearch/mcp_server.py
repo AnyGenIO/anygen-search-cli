@@ -14,6 +14,8 @@ from hsearch.engine import (
     find_similar as engine_find_similar,
     research as engine_research,
     agent as engine_agent,
+    map_site as engine_map_site,
+    crawl_site as engine_crawl_site,
 )
 from hsearch.providers import list_providers
 from hsearch.schema import render_schema
@@ -283,6 +285,48 @@ async def agent_tool(
     return resp.to_dict()
 
 
+async def map_tool(
+    url: str,
+    max_depth: int = 1,
+    limit: int = 50,
+    instructions: str = "",
+) -> dict[str, Any]:
+    """Map a site's URL inventory via Tavily /map — fast, no content extraction.
+
+    Best first move for COMPLETE page enumeration (marketplace catalogs, docs
+    trees, connector listings) where client-side pagination hides most entries
+    and sitemap.xml is missing or stale. instructions is natural-language
+    steering, e.g. "only integration detail pages".
+    """
+    resp = await engine_map_site(
+        url, max_depth=max_depth, limit=limit, instructions=instructions or None
+    )
+    return resp.to_dict()
+
+
+async def crawl_tool(
+    url: str,
+    max_depth: int = 1,
+    limit: int = 20,
+    instructions: str = "",
+    extract_depth: str = "basic",
+) -> dict[str, Any]:
+    """Crawl a site and extract each page's content via Tavily /crawl.
+
+    Run map first to size the job. instructions prunes the traversal frontier
+    during the crawl (real agentic steering, not a post-filter).
+    """
+    resp = await engine_crawl_site(
+        url,
+        max_depth=max_depth,
+        limit=limit,
+        instructions=instructions or None,
+        extract_depth=extract_depth,
+        format="markdown",
+    )
+    return resp.to_dict()
+
+
 def build_server() -> Any:
     """Build a FastMCP server with hsearch tools registered."""
     if FastMCP is None:
@@ -298,6 +342,8 @@ def build_server() -> Any:
     server.tool(name="similar")(similar_tool)
     server.tool(name="research")(research_tool)
     server.tool(name="agent")(agent_tool)
+    server.tool(name="map")(map_tool)
+    server.tool(name="crawl")(crawl_tool)
     server.tool(name="providers")(providers)
     server.tool(name="schema")(schema)
     return server

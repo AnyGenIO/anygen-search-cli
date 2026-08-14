@@ -75,19 +75,22 @@ class FirecrawlProvider(SearchProvider):
             payload["enterprise"] = [ent] if isinstance(ent, str) else list(ent)
 
         # ---- scrapeOptions -------------------------------------------------
+        # NOTE (2026-08-14, live-verified): Firecrawl /v2/search scrapeOptions
+        # accepts ONLY the enum documented at api-reference/endpoint/search —
+        # `highlights` is NOT in it and returns HTTP 400 `invalid_union`, in
+        # BOTH the plain-string and {"type": ...} object shapes. v0.5.0 briefly
+        # re-enabled it after the vendor docs implied support; the vendor has
+        # since walked that back. `highlights` is an Exa-only concept here, so
+        # drop it silently rather than letting a multi-provider mode (recall)
+        # 400 the whole Firecrawl leg. See tests/test_v090_drift.py.
         scrape_opts: dict[str, Any] = {"onlyMainContent": True}
-        formats: list[str] = []
+        formats: list[Any] = []
         if kwargs.get("with_content"):
             formats.append("markdown")
         if kwargs.get("summary"):
             formats.append("summary")
-        if kwargs.get("highlights"):
-            h: dict[str, Any] | str = "highlights"
-            if kwargs.get("highlights_query"):
-                h = {"type": "highlights", "query": kwargs["highlights_query"]}
-            formats.append(h)
         if kwargs.get("question"):
-            q: dict[str, Any] | str = {"type": "question", "question": kwargs["question"]}
+            q: dict[str, Any] = {"type": "question", "question": kwargs["question"]}
             formats.append(q)
         if formats:
             scrape_opts["formats"] = formats

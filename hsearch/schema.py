@@ -578,6 +578,149 @@ SEARCH_SCHEMA: dict[str, Any] = {
             ],
         },
         {
+            "name": "map",
+            "description": (
+                "Map a site's complete URL inventory via Tavily /map — fast (~1-2s), no "
+                "content extraction. Use this FIRST when you need an exhaustive page "
+                "enumeration (marketplace catalogs, docs trees, connector/integration "
+                "listings): client-side React pagination hides most entries from a normal "
+                "page fetch, and sitemap.xml is often missing or stale. Returns pages[] "
+                "with url only."
+            ),
+            "cli_usage": "hsearch map <url> [options]",
+            "parameters": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Root URL to map.",
+                        "cli_flag": "positional argument",
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Link-hops from the root.",
+                        "cli_flag": "--max-depth",
+                    },
+                    "max_breadth": {
+                        "type": "integer",
+                        "description": "Max links followed per page.",
+                        "cli_flag": "--max-breadth",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max total pages to discover.",
+                        "cli_flag": "--limit",
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "description": (
+                            "Natural-language steering that prunes the traversal, "
+                            "e.g. 'only integration detail pages'."
+                        ),
+                        "cli_flag": "--instructions",
+                    },
+                    "select_path": {
+                        "type": "string",
+                        "description": "Regex path allowlist; repeatable.",
+                        "cli_flag": "--select-path",
+                    },
+                    "exclude_path": {
+                        "type": "string",
+                        "description": "Regex path blocklist; repeatable.",
+                        "cli_flag": "--exclude-path",
+                    },
+                    "allow_external": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Follow links off the root domain.",
+                        "cli_flag": "--allow-external",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["table", "json", "urls", "markdown"],
+                        "default": "json",
+                        "description": "Output format. 'urls' is pipe-friendly.",
+                        "cli_flag": "--format / -f",
+                    },
+                },
+            },
+            "examples": [
+                {
+                    "description": "Enumerate every integration page on a SaaS marketplace",
+                    "command": 'hsearch map "https://example.com/integrations" --limit 200 -f urls',
+                },
+                {
+                    "description": "Only pricing pages",
+                    "command": 'hsearch map "https://example.com" --instructions "only pricing pages"',
+                },
+            ],
+        },
+        {
+            "name": "crawl",
+            "description": (
+                "Crawl a site and extract each page's content via Tavily /crawl. Run "
+                "`map` first to size the job, then crawl with --limit. --instructions is "
+                "real agentic steering that prunes the frontier DURING traversal, not a "
+                "post-filter. Returns pages[] with url + extracted content."
+            ),
+            "cli_usage": "hsearch crawl <url> [options]",
+            "parameters": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Root URL to crawl.",
+                        "cli_flag": "positional argument",
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Link-hops from the root.",
+                        "cli_flag": "--max-depth",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max total pages to crawl.",
+                        "cli_flag": "--limit",
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "description": "Natural-language traversal steering.",
+                        "cli_flag": "--instructions",
+                    },
+                    "extract_depth": {
+                        "type": "string",
+                        "enum": ["basic", "advanced"],
+                        "default": "basic",
+                        "description": "advanced retrieves tables / embedded content.",
+                        "cli_flag": "--extract-depth",
+                    },
+                    "content_format": {
+                        "type": "string",
+                        "enum": ["markdown", "text"],
+                        "description": "Extracted content format.",
+                        "cli_flag": "--content-format",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["table", "json", "urls", "markdown"],
+                        "default": "json",
+                        "description": "Output format.",
+                        "cli_flag": "--format / -f",
+                    },
+                },
+            },
+            "examples": [
+                {
+                    "description": "Read a docs section with traversal steering",
+                    "command": 'hsearch crawl "https://docs.example.com" --limit 20 --instructions "API reference pages only"',
+                },
+            ],
+        },
+        {
             "name": "providers",
             "description": "List all providers and their configuration status (which API keys are set).",
             "cli_usage": "hsearch providers",

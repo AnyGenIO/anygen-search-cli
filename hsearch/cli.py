@@ -28,11 +28,14 @@ from hsearch.engine import (
     find_similar as engine_find_similar,
     research as engine_research,
     agent as engine_agent,
+    map_site as engine_map_site,
+    crawl_site as engine_crawl_site,
     AgentResponse,
     AnswerResponse,
     GroundingResponse,
     ResearchResponse,
     SearchResponse,
+    TraversalResponse,
 )
 from hsearch.extract import EXTRACT_PROVIDERS, extract_many
 from hsearch.filters import Filters
@@ -221,7 +224,9 @@ def search(
     ),
     category: Optional[str] = typer.Option(
         None, "--category",
-        help="Exa category filter: company | research paper | news | pdf | github | tweet | personal site | linkedin profile | financial report.",
+        help="Exa category: company | publication | news | people | personal site | "
+             "financial report. Retired names ('research paper', 'linkedin profile') "
+             "are auto-mapped to their successors.",
     ),
     include_favicon: bool = typer.Option(
         False, "--include-favicon",
@@ -592,6 +597,154 @@ def mcp_cmd() -> None:
             '[red]MCP support is not installed.[/] Install MCP support with: pip install -e ".[mcp]"'
         )
         raise typer.Exit(1)
+
+
+def _render_traversal(resp: TraversalResponse, fmt: Optional[str], show_content: bool) -> None:
+    """Shared renderer for `hsearch map` / `hsearch crawl`."""
+    if resp.error:
+        err_console.print(f"[red]error:[/] {resp.error}")
+        raise typer.Exit(1)
+    if fmt is None:
+        fmt = "table" if sys.stdout.isatty() else "json"
+    if fmt == "json":
+        import json
+
+        sys.stdout.write(json.dumps(resp.to_dict(), ensure_ascii=False, indent=2) + "\n")
+    elif fmt == "urls":
+        for u in resp.urls:
+            sys.stdout.write(u + "\n")
+    elif fmt == "markdown":
+        sys.stdout.write(f"# {resp.kind}: {resp.base_url}\n\n")
+        for p in resp.pages:
+            sys.stdout.write(f"## {p['url']}\n\n")
+            if show_content and p.get("content"):
+                sys.stdout.write(p["content"] + "\n\n")
+    else:
+        table = Table(
+            title=f"hsearch {resp.kind} — {resp.base_url} ({len(resp.pages)} pages, "
+            f"{resp.response_time}s)",
+            header_style="bold cyan",
+        )
+        table.add_column("#", style="dim", width=4)
+        table.add_column("URL")
+        if any(p.get("content") for p in resp.pages):
+            table.add_column("Chars", justify="right", width=8)
+        for i, p in enumerate(resp.pages, 1):
+            row = [str(i), p["url"]]
+            if any(x.get("content") for x in resp.pages):
+                row.append(str(len(p.get("content") or "")))
+            table.add_row(*row)
+        console.print(table)
+
+
+@app.command("map")
+def map_cmd(
+    url: str = typer.Argument(..., help="Root URL to map."),
+    max_depth: Optional[int] = typer.Option(
+        None, "--max-depth", help="Link-hops from the root (default 1)."
+    ),
+    max_breadth: Optional[int] = typer.Option(
+        None, "--max-breadth", help="Max links followed per page."
+    ),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Max total pages to discover."),
+    instructions: Optional[str] = typer.Option(
+        None, "--instructions", help="Natural-language steering, e.g. 'only pricing pages'."
+    ),
+    select_paths: Optional[list[str]] = typer.Option(
+        None, "--select-path", help="Regex path allowlist; repeatable."
+    ),
+    exclude_paths: Optional[list[str]] = typer.Option(
+        None, "--exclude-path", help="Regex path blocklist; repeatable."
+    ),
+    allow_external: bool = typer.Option(
+        False, "--allow-external", help="Follow links off the root domain."
+    ),
+    categories: Optional[list[str]] = typer.Option(
+        None, "--category", help="Page category filter (e.g. Documentation, Pricing); repeatable."
+    ),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="table | json | urls | markdown (auto: json when piped)."
+    ),
+) -> None:
+    """Map a site's URL inventory via Tavily /map (fast, no content extraction).
+
+    The right first move when you need a COMPLETE page enumeration (marketplace
+    listings, docs trees, connector catalogs) — beats fighting client-side
+    React pagination, and works when sitemap.xml is missing or stale.
+    """
+    resp = asyncio.run(
+        engine_map_site(
+            url,
+            max_depth=max_depth,
+            max_breadth=max_breadth,
+            limit=limit,
+            instructions=instructions,
+            select_paths=select_paths or None,
+            exclude_paths=exclude_paths or None,
+            allow_external=allow_external or None,
+            categories=categories or None,
+        )
+    )
+    _render_traversal(resp, fmt, show_content=False)
+
+
+@app.command("crawl")
+def crawl_cmd(
+    url: str = typer.Argument(..., help="Root URL to crawl."),
+    max_depth: Optional[int] = typer.Option(
+        None, "--max-depth", help="Link-hops from the root (default 1)."
+    ),
+    max_breadth: Optional[int] = typer.Option(
+        None, "--max-breadth", help="Max links followed per page."
+    ),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Max total pages to crawl."),
+    instructions: Optional[str] = typer.Option(
+        None, "--instructions", help="Natural-language steering, e.g. 'API reference pages only'."
+    ),
+    extract_depth: Optional[str] = typer.Option(
+        None, "--extract-depth", help="basic | advanced (advanced gets tables/embedded content)."
+    ),
+    out_format: Optional[str] = typer.Option(
+        None, "--content-format", help="markdown | text — extracted content format."
+    ),
+    select_paths: Optional[list[str]] = typer.Option(
+        None, "--select-path", help="Regex path allowlist; repeatable."
+    ),
+    exclude_paths: Optional[list[str]] = typer.Option(
+        None, "--exclude-path", help="Regex path blocklist; repeatable."
+    ),
+    allow_external: bool = typer.Option(
+        False, "--allow-external", help="Follow links off the root domain."
+    ),
+    categories: Optional[list[str]] = typer.Option(
+        None, "--category", help="Page category filter; repeatable."
+    ),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", "-f", help="table | json | urls | markdown (auto: json when piped)."
+    ),
+) -> None:
+    """Crawl a site and extract each page's content via Tavily /crawl.
+
+    Use `hsearch map` first to size the job, then crawl with --limit. The
+    --instructions flag is real agentic steering, not a keyword filter: it
+    prunes the frontier during traversal.
+    """
+    resp = asyncio.run(
+        engine_crawl_site(
+            url,
+            max_depth=max_depth,
+            max_breadth=max_breadth,
+            limit=limit,
+            instructions=instructions,
+            extract_depth=extract_depth,
+            format=out_format,
+            select_paths=select_paths or None,
+            exclude_paths=exclude_paths or None,
+            allow_external=allow_external or None,
+            categories=categories or None,
+        )
+    )
+    _render_traversal(resp, fmt, show_content=True)
 
 
 @app.command("answer")

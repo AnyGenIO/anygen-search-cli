@@ -4,6 +4,70 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [0.9.0] — 2026-08-14
+
+Provider drift wave (2026-08) + site traversal. Three vendor changes broke or
+degraded existing behavior silently; all were caught by live-probing the APIs
+rather than reading changelogs, and all now have regression tests.
+
+### Fixed
+- **`--mode recall` no longer 400s Firecrawl.** Firecrawl removed `highlights`
+  from the `/v2/search` `scrapeOptions.formats` enum again — live-verified
+  2026-08-14 that BOTH `["highlights"]` and `[{"type":"highlights"}]` return
+  HTTP 400 `invalid_union`. Because `--mode recall` enables `highlights` for
+  Exa, the kwarg leaked into Firecrawl and killed the entire Firecrawl leg on
+  every recall run. The provider now drops it. (v0.4.0 fixed this once; v0.5.0
+  re-enabled it after the vendor docs implied v2 support; the vendor has since
+  walked that back. Third time — now covered by tests.)
+- **`--mode recall` no longer silently loses Exa to a timeout.** Exa's
+  `deep-reasoning` tier (which recall selects) measures ~12s standalone and
+  reliably exceeded the 15s global default once six providers competed for
+  connections. Slow Exa tiers now get a 45s floor, overridable upward via
+  `HSEARCH_TIMEOUT`. Net effect: recall went from 4/6 to **6/6 providers
+  contributing, zero errors**.
+- **`--mode academic` stopped requesting a retired Exa category.** Exa's
+  July-2026 release replaced `research paper` with `publication` (a 350M-entry
+  index with structured author/venue/citation metadata) and dropped it from the
+  documented enum. Unknown strings are still accepted as loose "category hints",
+  so this failed silently as a quality regression rather than an error.
+
+### Added
+- **`hsearch map URL`** — Tavily `/map`. Returns a site's complete URL
+  inventory without extracting content (live: 20 URLs in 1.5s). The right first
+  move for exhaustive page enumeration — marketplace catalogs, docs trees,
+  connector listings — where client-side React pagination hides most entries
+  and `sitemap.xml` is missing or stale.
+- **`hsearch crawl URL`** — Tavily `/crawl`. Traverses a site AND extracts each
+  page. `--instructions` is genuine agentic steering that prunes the traversal
+  frontier mid-crawl, not a post-filter: live-verified that
+  `--instructions "API reference endpoint pages only"` returned only
+  `api-reference/endpoint/*` pages.
+- Traversal controls shared by both: `--max-depth`, `--max-breadth`, `--limit`,
+  `--select-path`, `--exclude-path`, `--allow-external`, `--category`; crawl
+  also takes `--extract-depth basic|advanced` and `--content-format`.
+  Output formats: `table | json | urls | markdown`.
+- SDK: `map_site`, `map_site_sync`, `crawl_site`, `crawl_site_sync`,
+  `TraversalResponse` (normalizes /map's `list[str]` and /crawl's
+  `list[{url, raw_content}]` into one `pages` shape, plus a `.urls` helper).
+- MCP: `map` and `crawl` tools registered (11 tools total).
+- Exa `people` category is now documented and usable — live-verified to return
+  LinkedIn profiles directly.
+
+### Changed
+- Exa category names are normalized in the provider: `research paper` /
+  `papers` → `publication`, `linkedin profile` → `people`. Existing scripts and
+  muscle memory keep working at full quality. `pdf` / `github` / `tweet` are
+  deprecated upstream with no successor and pass through untouched as hints.
+- `--category` help text now lists the current enum.
+- Version assertions in tests no longer hardcode a literal version string
+  (every release used to break them); they assert a floor, and a new test
+  checks `pyproject.toml` and `hsearch.__version__` agree.
+
+### Tests
+- 279 passing (245 → 279; 34 new in `tests/test_v090_drift.py`).
+- Two v0.3.1 Firecrawl `highlights` tests reversed to assert the corrected
+  behavior, with the reversal reason documented inline.
+
 ## [0.8.0] — 2026-06-25
 
 Provider drift wave (2026-06): Exa Agent API (June 2026 launch), Tavily Extract

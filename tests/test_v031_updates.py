@@ -86,7 +86,15 @@ async def test_firecrawl_timeout_param():
 
 @pytest.mark.asyncio
 async def test_firecrawl_highlights_format():
-    """Firecrawl v2 now supports 'highlights' as a valid scrapeOptions format."""
+    """REVERSED 2026-08-14: Firecrawl no longer accepts 'highlights' as a format.
+
+    v0.3.1 asserted `highlights` was valid after the vendor docs implied v2
+    support. Live probing on 2026-08-14 shows /v2/search returns HTTP 400
+    `invalid_union` for BOTH `["highlights"]` and `[{"type":"highlights"}]`.
+    `highlights` is an Exa-only concept, and because `--mode recall` enables it
+    for Exa the kwarg leaks into Firecrawl — so the provider must drop it.
+    See tests/test_v090_drift.py for the full drift regression set.
+    """
     captured: dict = {}
 
     def _h(req: httpx.Request) -> httpx.Response:
@@ -100,12 +108,16 @@ async def test_firecrawl_highlights_format():
         async with FirecrawlProvider() as p:
             await p.search("q", count=1, highlights=True)
     formats = (captured["body"].get("scrapeOptions") or {}).get("formats", [])
-    assert "highlights" in formats
+    flat = [f if isinstance(f, str) else f.get("type") for f in formats]
+    assert "highlights" not in flat
 
 
 @pytest.mark.asyncio
 async def test_firecrawl_highlights_with_query():
-    """Firecrawl highlights format with query sub-parameter."""
+    """REVERSED 2026-08-14: highlights_query must also not reach Firecrawl.
+
+    Passing it must not resurrect the rejected format (nor 400 the request).
+    """
     captured: dict = {}
 
     def _h(req: httpx.Request) -> httpx.Response:
@@ -120,8 +132,7 @@ async def test_firecrawl_highlights_with_query():
             await p.search("q", count=1, highlights=True, highlights_query="important parts")
     formats = (captured["body"].get("scrapeOptions") or {}).get("formats", [])
     highlight_fmt = [f for f in formats if isinstance(f, dict) and f.get("type") == "highlights"]
-    assert len(highlight_fmt) == 1
-    assert highlight_fmt[0]["query"] == "important parts"
+    assert highlight_fmt == []
 
 
 # ---------- Exa --------------------------------------------------------------
