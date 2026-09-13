@@ -21,11 +21,19 @@ from hsearch.engine import (
 from hsearch.providers import list_providers
 from hsearch.schema import render_schema
 
+# mcp 2.x renamed FastMCP -> MCPServer (mcp.server.mcpserver). The constructor,
+# .tool() decorator and .run(transport=...) signatures are unchanged, so bind
+# whichever class this environment provides and use it identically below.
 try:  # pragma: no cover - exercised by CLI fallback when the extra is missing.
-    from mcp.server.fastmcp import FastMCP
-except ImportError as e:  # pragma: no cover
-    FastMCP = None  # type: ignore[assignment]
-    MCP_IMPORT_ERROR: ImportError | None = e
+    from mcp.server.mcpserver import MCPServer as FastMCP
+except ImportError:  # pragma: no cover - mcp 1.x, or the extra is absent.
+    try:
+        from mcp.server.fastmcp import FastMCP
+    except ImportError as e:
+        FastMCP = None  # type: ignore[assignment]
+        MCP_IMPORT_ERROR: ImportError | None = e
+    else:
+        MCP_IMPORT_ERROR = None
 else:
     MCP_IMPORT_ERROR = None
 
