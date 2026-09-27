@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-245%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -237,6 +237,19 @@ hsearch search "rust async runtimes" --format json | jq '.results[].url'
 ```
 
 ---
+
+## Provider availability
+
+A provider can have a key and still be unreachable (e.g. blocked on a corporate
+network). Tell hsearch so it stops waiting on it:
+
+```bash
+export HSEARCH_DISABLED_PROVIDERS=jina        # skip in --all / modes / fallbacks (-p jina still works)
+export HSEARCH_EXTRACT_PROVIDER=tavily        # default for `extract` and --extract-top
+export HSEARCH_EXTRACT_FALLBACK=firecrawl     # retry failed URLs here (default firecrawl,tavily,jina; "none" = off)
+```
+
+`hsearch providers` / `hsearch config` show the effective state.
 
 ## Cache
 

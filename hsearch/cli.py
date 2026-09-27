@@ -18,6 +18,9 @@ from hsearch.config import (
     cache_dir,
     cache_ttl,
     configured_providers,
+    default_extract_provider,
+    disabled_providers,
+    extract_fallback_chain,
     get_key,
     timeout_seconds,
 )
@@ -39,7 +42,7 @@ from hsearch.engine import (
     SearchResponse,
     TraversalResponse,
 )
-from hsearch.extract import EXTRACT_PROVIDERS, extract_many
+from hsearch.extract import EXTRACT_PROVIDERS, extract_many, extract_many_detailed
 from hsearch.filters import Filters
 from hsearch.models import SearchResult
 from hsearch.output import emit
@@ -130,10 +133,11 @@ def search(
     extract_top: int = typer.Option(
         0, "--extract-top", help="Extract content of top-N merged results."
     ),
-    extract_provider: str = typer.Option(
-        "jina",
+    extract_provider: Optional[str] = typer.Option(
+        None,
         "--extract-provider",
-        help="Provider for --extract-top content fetch: jina | firecrawl.",
+        help="Provider for --extract-top content fetch: jina | firecrawl | tavily "
+        "(default: $HSEARCH_EXTRACT_PROVIDER or jina; failures fall back per $HSEARCH_EXTRACT_FALLBACK).",
     ),
     agent: bool = typer.Option(
         False,
@@ -371,7 +375,7 @@ def search(
         if not _cli_option_present("--top", "-n"):
             top = 5
 
-    if extract_top and extract_top > 0 and extract_provider not in EXTRACT_PROVIDERS:
+    if extract_top and extract_top > 0 and extract_provider and extract_provider not in EXTRACT_PROVIDERS:
         err_console.print(
             f"[red]Invalid --extract-provider:[/] {extract_provider} "
             f"(choose {'|'.join(EXTRACT_PROVIDERS)})"
@@ -490,8 +494,13 @@ def search(
 @app.command()
 def extract(
     urls: list[str] = typer.Argument(..., help="One or more URLs to extract."),
-    provider: str = typer.Option(
-        "jina", "--provider", "-p", help="jina | firecrawl | tavily"
+    provider: Optional[str] = typer.Option(
+        None, "--provider", "-p",
+        help="jina | firecrawl | tavily (default: $HSEARCH_EXTRACT_PROVIDER or jina).",
+    ),
+    no_fallback: bool = typer.Option(
+        False, "--no-fallback",
+        help="Do not retry failed URLs with other providers ($HSEARCH_EXTRACT_FALLBACK).",
     ),
     fmt: Optional[str] = typer.Option(
         None, "--format", "-f", help="markdown | json (auto: json when piped, markdown in terminal)"
@@ -516,6 +525,7 @@ def extract(
     """
     if fmt is None:
         fmt = "markdown" if sys.stdout.isatty() else "json"
+    provider = (provider or default_extract_provider()).lower()
     options: dict = {}
     if provider == "tavily":
         if query:
@@ -524,19 +534,28 @@ def extract(
             options["extract_depth"] = extract_depth
         if extract_format:
             options["format"] = extract_format
-    outcomes = asyncio.run(
-        extract_many(urls, provider=provider, concurrency=concurrency, **options)
+    detailed = asyncio.run(
+        extract_many_detailed(
+            urls, provider=provider, concurrency=concurrency,
+            fallback=not no_fallback, **options,
+        )
     )
+    outcomes = [(u, c, e) for u, c, e, _by in detailed]
     if fmt == "json":
         import json
 
-        results_ok = [{"url": u, "content": c} for u, c, e in outcomes if not e]
+        results_ok = [
+            {"url": u, "content": c, "provider": by} for u, c, e, by in detailed if not e
+        ]
         errs = {u: e for u, _c, e in outcomes if e}
         meta = {
             "provider": provider,
             "urls_requested": len(urls),
             "urls_succeeded": len(results_ok),
         }
+        fell_back = {u: by for u, _c, e, by in detailed if not e and by != provider}
+        if fell_back:
+            meta["fallback"] = fell_back
         out: dict = {"meta": meta, "results": results_ok}
         if errs:
             out["errors"] = errs
@@ -561,6 +580,8 @@ def providers_cmd() -> None:
         env = PROVIDER_ENV[name]
         ok = bool(get_key(name))
         status = "[green]configured[/]" if ok else "[red]missing[/]"
+        if ok and name in disabled_providers():
+            status = "[yellow]disabled[/] (HSEARCH_DISABLED_PROVIDERS)"
         table.add_row(name, env, status)
     console.print(table)
 
@@ -581,6 +602,12 @@ def config() -> None:
     table.add_row("cache_entries", str(s["entries"]))
     table.add_row("cache_size_bytes", str(s["size_bytes"]))
     table.add_row("configured_providers", ", ".join(configured_providers()) or "(none)")
+    table.add_row("disabled_providers", ", ".join(sorted(disabled_providers())) or "(none)")
+    table.add_row("extract_provider", default_extract_provider())
+    table.add_row(
+        "extract_fallback",
+        ", ".join(extract_fallback_chain(default_extract_provider())) or "(none)",
+    )
     console.print(table)
 
 

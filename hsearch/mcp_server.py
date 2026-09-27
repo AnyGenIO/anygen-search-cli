@@ -5,7 +5,7 @@ import asyncio
 import json
 from typing import Any
 
-from hsearch.config import PROVIDER_ENV, configured_providers, get_key
+from hsearch.config import PROVIDER_ENV, configured_providers, default_extract_provider, get_key
 from hsearch.engine import (
     extract_urls,
     search as engine_search,
@@ -67,7 +67,7 @@ async def search(
     no_cache: bool = False,
     cache_ttl: int | None = None,
     extract_top: int = 0,
-    extract_provider: str = "jina",
+    extract_provider: str | None = None,
     sources: str | None = None,
     goggles: str | list[str] | None = None,
     serper_type: str | None = None,
@@ -179,7 +179,7 @@ async def search(
 
 async def extract(
     url: str,
-    provider: str = "jina",
+    provider: str | None = None,
     query: str | None = None,
     extract_depth: str | None = None,
     extract_format: str | None = None,
@@ -190,6 +190,7 @@ async def extract(
     ``query`` (rerank chunks by relevance), ``extract_depth`` (basic|advanced),
     and ``extract_format`` (markdown|text).
     """
+    provider = (provider or default_extract_provider()).lower()
     options: dict[str, Any] = {}
     if provider == "tavily":
         if query:

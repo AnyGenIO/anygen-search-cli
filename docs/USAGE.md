@@ -227,6 +227,9 @@ and merges any unique fields.
 | `HSEARCH_TIMEOUT`      | optional | HTTP timeout, sec (default 20)               |
 | `HSEARCH_CACHE_TTL`    | optional | Cache TTL in sec (default 3600)              |
 | `HSEARCH_CACHE_DIR`    | optional | Override cache dir (default `~/.cache/hsearch`) |
+| `HSEARCH_DISABLED_PROVIDERS` | optional | Comma list left out of auto-routing (`--all`, modes, fallbacks). Use for a provider that has a key but is unreachable on your network. `-p <name>` still works |
+| `HSEARCH_EXTRACT_PROVIDER`   | optional | Default provider for `extract` / `--extract-top` (default `jina`) |
+| `HSEARCH_EXTRACT_FALLBACK`   | optional | Retry chain for failed URL extraction (default `firecrawl,tavily,jina`; `none` disables; primary/disabled/keyless skipped) |
 
 Load order: explicit shell/process env (highest) → `HSEARCH_ENV_FILE` → project `./.env` → active Hermes profile `$HERMES_HOME/.env` → global `~/.hermes/.env`.
 This is profile-aware for Hermes gateway sessions where `HOME` may point at a sandbox like `~/.hermes/profiles/<name>/home`.

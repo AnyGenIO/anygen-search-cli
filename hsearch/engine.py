@@ -494,7 +494,7 @@ async def search(
     sites: list[str] | None = None,
     exclude: list[str] | None = None,
     extract_top: int = 0,
-    extract_provider: str = "jina",
+    extract_provider: str | None = None,
     api_keys: dict[str, str] | None = None,
     fanout_timeout: float | None = None,
     **kwargs: Any,
@@ -563,7 +563,9 @@ async def search(
     # --top means total results wanted, not per-provider
     merged = merged[:max(top, 1)]
 
-    if extract_top and extract_top > 0 and merged and extract_provider in EXTRACT_PROVIDERS:
+    if extract_top and extract_top > 0 and merged and (
+        extract_provider is None or extract_provider in EXTRACT_PROVIDERS
+    ):
         urls = [r.url for r in merged[:extract_top] if r.url]
         outcomes = await extract_many(urls, provider=extract_provider, concurrency=4)
         url_to_content = {u: c for (u, c, _e) in outcomes if c}
@@ -653,7 +655,7 @@ def search_sync(
 
 async def extract_urls(
     urls: list[str],
-    provider: str = "jina",
+    provider: str | None = None,
     concurrency: int = 4,
     **options: Any,
 ) -> list[ExtractResult]:
@@ -661,7 +663,9 @@ async def extract_urls(
 
     Args:
         urls: URLs to extract content from.
-        provider: Extraction provider (jina, firecrawl, or tavily).
+        provider: Extraction provider (jina, firecrawl, or tavily). ``None`` =
+            ``$HSEARCH_EXTRACT_PROVIDER`` or jina. Failed URLs are retried via
+            ``$HSEARCH_EXTRACT_FALLBACK`` (see :func:`hsearch.config.extract_fallback_chain`).
         concurrency: Max parallel requests.
         **options: Provider-specific extras. Tavily honors ``query`` (rerank
             chunks by relevance), ``extract_depth`` (basic|advanced), and
@@ -676,7 +680,7 @@ async def extract_urls(
 
 def extract_urls_sync(
     urls: list[str],
-    provider: str = "jina",
+    provider: str | None = None,
     concurrency: int = 4,
     **options: Any,
 ) -> list[ExtractResult]:

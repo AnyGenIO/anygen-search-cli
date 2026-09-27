@@ -4,6 +4,43 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [1.1.0] — 2026-09-27
+
+Provider availability knobs. Motivated by a real deployment where `jina.ai` is
+domain-blocked (TCP handshake never completes): the key is set, so hsearch
+treated jina as available and **every `--all` / `--mode recall` fan-out and
+every default `extract` waited the full ~30s timeout** — `extract` then failed
+outright. "Has a key" is not the same as "reachable". 330 tests.
+
+### Added
+- **`HSEARCH_DISABLED_PROVIDERS`** — comma-separated providers dropped from all
+  auto-routing (`configured_providers()`: `--all`, `--mode *`, search fallbacks,
+  extract fallbacks). Explicit `-p <name>` still hits the provider, so a
+  disabled provider stays diagnosable. `hsearch providers` shows it as
+  `disabled`; `hsearch config` lists it.
+- **`HSEARCH_EXTRACT_PROVIDER`** — default provider for `extract`,
+  `--extract-top`, SDK `extract_urls()` and MCP `extract` (default still `jina`).
+- **Extract fallback** — a URL that fails on the primary provider is retried
+  through `HSEARCH_EXTRACT_FALLBACK` (default `firecrawl,tavily,jina`; the
+  primary, disabled and keyless providers are skipped; `none` turns it off).
+  `extract --no-fallback` disables it per call. JSON output now carries
+  `results[].provider` (who actually served the page) and `meta.fallback`
+  (`{url: provider}` for rescued URLs); on total failure the error lists every
+  provider tried. SDK: `extract_one_detailed()` / `extract_many_detailed()`.
+
+### Changed
+- `extract_provider` / `provider` parameters in the CLI, SDK and MCP server
+  now default to `None` (= `HSEARCH_EXTRACT_PROVIDER` or `jina`) instead of a
+  hard-coded `"jina"`. Behaviour with no env vars set is unchanged except that
+  failed extractions are now retried.
+
+### Measured (live keys, jina blocked, `HSEARCH_DISABLED_PROVIDERS=jina HSEARCH_EXTRACT_PROVIDER=tavily`)
+| Call | 1.0.0 | 1.1.0 |
+|---|---|---|
+| `extract <url>` | 32s, 0/1 | 1.3s, 1/1 |
+| `search --all` | 32s | 5.3s |
+| `extract` with no env set (jina default) | 32s, 0/1 | 33s, 1/1 via firecrawl fallback |
+
 ## [1.0.0] — 2026-08-14
 
 Closes the deferral backlog from the 2026-08-14 drift review. **Every item was

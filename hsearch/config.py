@@ -75,8 +75,59 @@ def get_key(provider: str) -> str | None:
     return val.strip() if val else None
 
 
+def _csv_env(var: str) -> list[str]:
+    raw = os.environ.get(var, "")
+    return [s.strip().lower() for s in raw.split(",") if s.strip()]
+
+
+def disabled_providers() -> set[str]:
+    """Providers excluded from auto-routing via ``HSEARCH_DISABLED_PROVIDERS``.
+
+    Comma-separated, e.g. ``HSEARCH_DISABLED_PROVIDERS=jina``. Having a key is
+    not the same as being reachable: a provider that is blocked on your network
+    would otherwise be included in every ``--all`` / ``--mode recall`` fan-out
+    and stall each call for the full HTTP timeout. Explicit ``-p <name>`` still
+    works, so a disabled provider stays diagnosable.
+    """
+    return set(_csv_env("HSEARCH_DISABLED_PROVIDERS"))
+
+
 def configured_providers() -> list[str]:
-    return [p for p in ALL_PROVIDERS if get_key(p)]
+    """Providers with a key that are not disabled (used by all auto-routing)."""
+    disabled = disabled_providers()
+    return [p for p in ALL_PROVIDERS if get_key(p) and p not in disabled]
+
+
+DEFAULT_EXTRACT_PROVIDER = "jina"
+
+
+def default_extract_provider() -> str:
+    """Default page-extraction provider (``HSEARCH_EXTRACT_PROVIDER``, else jina)."""
+    val = os.environ.get("HSEARCH_EXTRACT_PROVIDER", "").strip().lower()
+    return val or DEFAULT_EXTRACT_PROVIDER
+
+
+DEFAULT_EXTRACT_FALLBACK = ("firecrawl", "tavily", "jina")
+
+
+def extract_fallback_chain(primary: str) -> list[str]:
+    """Providers to retry a failed URL extraction with, in order.
+
+    ``HSEARCH_EXTRACT_FALLBACK``: unset/empty = firecrawl,tavily,jina;
+    ``none`` / ``off`` = no fallback; otherwise a comma-separated list.
+    The primary provider, disabled providers and providers without a key are
+    always dropped.
+    """
+    raw = _csv_env("HSEARCH_EXTRACT_FALLBACK")
+    if raw in (["none"], ["off"], ["0"], ["false"]):
+        return []
+    chain = raw or list(DEFAULT_EXTRACT_FALLBACK)
+    available = set(configured_providers())
+    out: list[str] = []
+    for p in chain:
+        if p != primary and p in available and p not in out:
+            out.append(p)
+    return out
 
 
 def cache_dir() -> Path:

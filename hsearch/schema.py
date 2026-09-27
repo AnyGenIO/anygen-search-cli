@@ -325,7 +325,7 @@ SEARCH_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "enum": ["jina", "firecrawl", "tavily"],
                         "default": "jina",
-                        "description": "Extraction provider. tavily adds --query relevance reranking + --extract-depth.",
+                        "description": "Extraction provider (default $HSEARCH_EXTRACT_PROVIDER or jina; failed URLs retry via $HSEARCH_EXTRACT_FALLBACK). tavily adds --query relevance reranking + --extract-depth.",
                         "cli_flag": "--provider / -p",
                     },
                     "format": {
