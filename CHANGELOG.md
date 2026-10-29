@@ -4,6 +4,18 @@ All notable changes to **anygen-search-cli** (`hsearch`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [SemVer](https://semver.org/).
 
+## [1.2.0] — 2026-10-29
+
+Jina search latency knob. Once jina.ai was reachable again (via proxy), it was
+the slowest leg of every fan-out: `s.jina.ai` fetches each result page
+server-side by default — live-measured 5–35 s per query, vs ~2 s with
+`X-Respond-With: no-content` (same SERP titles/URLs/descriptions).
+
+### Added
+- **`HSEARCH_JINA_SEARCH_RESPOND_WITH`** — default `X-Respond-With` header for
+  Jina search (e.g. `no-content`). Unset = previous behaviour. An explicit
+  `--jina-respond-with` still wins. `hsearch config` shows the active value.
+
 ## [1.1.0] — 2026-09-27
 
 Provider availability knobs. Motivated by a real deployment where `jina.ai` is

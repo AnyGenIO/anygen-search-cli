@@ -22,6 +22,7 @@ from hsearch.config import (
     disabled_providers,
     extract_fallback_chain,
     get_key,
+    jina_search_respond_with,
     timeout_seconds,
 )
 from hsearch.engine import (
@@ -608,6 +609,7 @@ def config() -> None:
         "extract_fallback",
         ", ".join(extract_fallback_chain(default_extract_provider())) or "(none)",
     )
+    table.add_row("jina_search_respond_with", jina_search_respond_with() or "(jina default)")
     console.print(table)
 
 

@@ -29,6 +29,17 @@ class JinaProvider(SearchProvider):
         # Default: fetch snippets/descriptions (not full content, but not no-content either)
         no_content = kwargs.get("no_content", False)
         headers = self._headers(json_resp=True, no_content=no_content)
+        # v1.2.0: HSEARCH_JINA_SEARCH_RESPOND_WITH sets a default X-Respond-With
+        # for s.jina.ai. Without it Jina fetches every result page server-side
+        # (live-measured 5–35 s/query vs ~2 s with ``no-content``), which makes
+        # jina the slowest leg of every --all / --mode recall fan-out. An
+        # explicit ``respond_with`` / ``no_content`` still wins; unset = old behaviour.
+        if not no_content and not kwargs.get("respond_with"):
+            from hsearch.config import jina_search_respond_with
+
+            default_rw = jina_search_respond_with()
+            if default_rw:
+                headers["X-Respond-With"] = default_rw
         headers["Content-Type"] = "application/json"
         if kwargs.get("site"):
             headers["X-Site"] = str(kwargs["site"])

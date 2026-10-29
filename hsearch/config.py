@@ -101,6 +101,16 @@ def configured_providers() -> list[str]:
 DEFAULT_EXTRACT_PROVIDER = "jina"
 
 
+def jina_search_respond_with() -> str | None:
+    """Default ``X-Respond-With`` for Jina search (``HSEARCH_JINA_SEARCH_RESPOND_WITH``).
+
+    Unset/empty = no header (Jina's default: fetch result pages server-side).
+    ``no-content`` returns SERP title/url/description only — ~2 s instead of 5–35 s.
+    """
+    val = os.environ.get("HSEARCH_JINA_SEARCH_RESPOND_WITH", "").strip()
+    return val or None
+
+
 def default_extract_provider() -> str:
     """Default page-extraction provider (``HSEARCH_EXTRACT_PROVIDER``, else jina)."""
     val = os.environ.get("HSEARCH_EXTRACT_PROVIDER", "").strip().lower()
